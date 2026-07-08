@@ -1,16 +1,16 @@
 name: Auktions-Verlauf aktualisieren
 
 on:
+  workflow_dispatch: {}   # manuelles Starten über den Actions-Tab
   schedule:
-    # Alle 30 Minuten (UTC). GitHub kann sich bei Last leicht verspäten.
-     - cron: "7,37 * * * *"
-  workflow_dispatch: {}   # erlaubt manuelles Starten über den Actions-Tab
+    # Alle 30 Minuten. GitHub kann geplante Läufe bei Last verzögern -
+    # deshalb sorgt der garantierte Commit unten dafür, dass das Repo als
+    # "aktiv" gilt, damit GitHub den Cron nicht drosselt/aussetzt.
+    - cron: "7,37 * * * *"
 
-# Dem Job erlauben, ins Repo zu committen
 permissions:
   contents: write
 
-# Verhindert, dass sich zwei Läufe gleichzeitig in die Quere kommen
 concurrency:
   group: history-updater
   cancel-in-progress: false
@@ -32,13 +32,16 @@ jobs:
           node history-updater/update-history.js
           node history-updater/update-shards.js
 
-      - name: Änderungen committen (falls vorhanden)
+      - name: Heartbeat schreiben (garantiert einen Commit pro Lauf)
+        run: date -u '+%Y-%m-%dT%H:%M:%SZ' > history-updater/last-run.txt
+
+      - name: Committen und pushen
         run: |
           git config user.name "history-bot"
           git config user.email "actions@github.com"
-          git add auction-history.json shard-history.json history-updater/state.json
+          git add auction-history.json shard-history.json history-updater/state.json history-updater/last-run.txt
           if git diff --staged --quiet; then
-            echo "Keine Änderungen."
+            echo "Keine Änderungen (sollte durch Heartbeat nicht vorkommen)."
           else
             git commit -m "Verlauf aktualisiert ($(date -u '+%Y-%m-%d %H:%M UTC'))"
             git push
