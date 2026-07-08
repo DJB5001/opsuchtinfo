@@ -1,12 +1,10 @@
 name: Auktions-Verlauf aktualisieren
 
 on:
-  workflow_dispatch: {}   # manuelles Starten über den Actions-Tab
-  schedule:
-    # Alle 30 Minuten. GitHub kann geplante Läufe bei Last verzögern -
-    # deshalb sorgt der garantierte Commit unten dafür, dass das Repo als
-    # "aktiv" gilt, damit GitHub den Cron nicht drosselt/aussetzt.
-    - cron: "7,37 * * * *"
+  # Der Zeitplan wird jetzt EXTERN von cron-job.org ausgelöst (alle 15 Min)
+  # über die GitHub-API. Deshalb ist GitHubs eigener "schedule"-Cron
+  # bewusst NICHT mehr aktiv - er lief unzuverlässig.
+  workflow_dispatch: {}   # wird von cron-job.org (und manuell) gestartet
 
 permissions:
   contents: write
@@ -41,7 +39,7 @@ jobs:
           git config user.email "actions@github.com"
           git add auction-history.json shard-history.json history-updater/state.json history-updater/last-run.txt
           if git diff --staged --quiet; then
-            echo "Keine Änderungen (sollte durch Heartbeat nicht vorkommen)."
+            echo "Keine Änderungen."
           else
             git commit -m "Verlauf aktualisiert ($(date -u '+%Y-%m-%d %H:%M UTC'))"
             git push
