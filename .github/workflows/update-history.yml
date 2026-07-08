@@ -1,0 +1,45 @@
+name: Auktions-Verlauf aktualisieren
+
+on:
+  schedule:
+    # Alle 30 Minuten (UTC). GitHub kann sich bei Last leicht verspäten.
+    - cron: "*/30 * * * *"
+  workflow_dispatch: {}   # erlaubt manuelles Starten über den Actions-Tab
+
+# Dem Job erlauben, ins Repo zu committen
+permissions:
+  contents: write
+
+# Verhindert, dass sich zwei Läufe gleichzeitig in die Quere kommen
+concurrency:
+  group: history-updater
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verlauf aktualisieren
+        run: |
+          node history-updater/update-history.js
+          node history-updater/update-shards.js
+
+      - name: Änderungen committen (falls vorhanden)
+        run: |
+          git config user.name "history-bot"
+          git config user.email "actions@github.com"
+          git add auction-history.json shard-history.json history-updater/state.json
+          if git diff --staged --quiet; then
+            echo "Keine Änderungen."
+          else
+            git commit -m "Verlauf aktualisiert ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+            git push
+          fi
