@@ -112,26 +112,30 @@ async function main() {
     const endMs = new Date(prevAuction.endTime).getTime();
     if (isNaN(endMs)) continue;
 
-    const expired = endMs <= now + 2 * 60 * 1000; // Endzeit (fast) erreicht
-    const hadBids = prevAuction.bids && Object.keys(prevAuction.bids).length > 0;
+    const bidValues = prevAuction.bids ? Object.values(prevAuction.bids).map(Number) : [];
+    const hadBids = bidValues.length > 0;
+    const highestBid = hadBids ? Math.max(...bidValues) : 0;
     const hasInstantBuy = prevAuction.instantBuyPrice != null && prevAuction.instantBuyPrice > 0;
 
-    // Ein Sofortkauf hinterlässt ein Gebot in Höhe des Sofortkaufpreises.
-    // Das ist das zuverlässigste Signal für "wurde per Sofortkauf gekauft".
-    let boughtViaInstant = false;
-    if (hasInstantBuy && hadBids) {
-      const highestBid = Math.max(...Object.values(prevAuction.bids).map(Number));
-      if (highestBid >= prevAuction.instantBuyPrice) boughtViaInstant = true;
-    }
+    // "Echtes" Gebot = jemand hat mindestens das Startgebot geboten.
+    // (Bei OPSUCHT ist schon das erste Gebot ein echtes Kaufgebot.)
+    const startBid = Number(prevAuction.startBid) || 0;
+    const hadRealBid = hadBids && highestBid > 0 && highestBid >= startBid;
+
+    // Sofortkauf: höchstes Gebot erreicht/übertrifft den Sofortkaufpreis.
+    const boughtViaInstant = hasInstantBuy && hadBids && highestBid >= prevAuction.instantBuyPrice;
 
     let saleType = null;
     if (boughtViaInstant) {
-      saleType = 'instant';        // per Sofortkauf gekauft (Gebot >= Sofortkaufpreis)
-    } else if (expired && hadBids) {
-      saleType = 'auction';        // regulär ersteigert (abgelaufen + Gebote)
+      saleType = 'instant';        // per Sofortkauf gekauft
+    } else if (hadRealBid) {
+      // Verschwunden + hatte ein echtes Gebot -> verkauft.
+      // Egal ob die Endzeit exakt erreicht ist: fällt eine Auktion MIT Gebot
+      // aus der Liste, wurde sie so gut wie immer verkauft. Das erfasst auch
+      // Auktionen, die zwischen zwei Läufen kurz vor Schluss weggingen.
+      saleType = 'auction';
     }
-    // Alles andere (vor Ablauf verschwunden ohne Sofortkauf-Gebot, oder
-    // abgelaufen ohne Gebote) -> zurückgezogen/unverkauft, nicht archivieren.
+    // Kein Gebot -> unverkauft/zurückgegeben, nicht archivieren.
     if (!saleType) continue;
 
     const { highestBidder, finalPrice } = deriveWinner(prevAuction);
