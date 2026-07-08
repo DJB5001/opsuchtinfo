@@ -128,6 +128,7 @@ async function main() {
       endTime: prevAuction.endTime,
       soldAt: new Date(endMs).toISOString(),
       sold: true,
+      bids: prevAuction.bids || {},   // komplette Gebotshistorie mitspeichern
       item: prevAuction.item
     };
 
