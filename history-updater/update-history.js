@@ -29,6 +29,9 @@ const STATE_FILE = path.join(__dirname, 'state.json');
 // die Datei unendlich wächst). Bei Bedarf höher stellen.
 const MAX_SALES_PER_ITEM = 500;
 
+// Verkäufe, die älter als so viele Tage sind, werden gelöscht.
+const MAX_AGE_DAYS = 90; // ~3 Monate
+
 function readJson(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -107,10 +110,13 @@ async function main() {
     // (mit kleiner Toleranz von 2 Min., falls die API leicht nachhängt).
     if (isNaN(endMs) || endMs > now + 2 * 60 * 1000) continue;
 
-    const { highestBidder, finalPrice } = deriveWinner(prevAuction);
-
-    // Ohne Gebote -> nicht verkauft, überspringen (optional: trotzdem loggen)
+    // WICHTIG: Nur Auktionen MIT mindestens einem Gebot gelten als verkauft.
+    // Läuft eine Auktion ohne Gebot ab, geht das Item an den Verkäufer zurück -
+    // das ist KEIN Verkauf und gehört nicht in den Verlauf.
     const hadBids = prevAuction.bids && Object.keys(prevAuction.bids).length > 0;
+    if (!hadBids) continue;
+
+    const { highestBidder, finalPrice } = deriveWinner(prevAuction);
 
     const sale = {
       id: key,
@@ -121,7 +127,7 @@ async function main() {
       finalPrice: finalPrice,
       endTime: prevAuction.endTime,
       soldAt: new Date(endMs).toISOString(),
-      sold: !!hadBids,
+      sold: true,
       item: prevAuction.item
     };
 
@@ -152,10 +158,29 @@ async function main() {
     };
   }
 
+  // 5b) Verkäufe älter als MAX_AGE_DAYS entfernen (~3 Monate)
+  const cutoff = now - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  let removedOld = 0;
+  for (const name of Object.keys(history)) {
+    const kept = (history[name] || []).filter(sale => {
+      // Zeitpunkt des Verkaufs bestimmen (soldAt bevorzugt, sonst endTime)
+      const t = new Date(sale.soldAt || sale.endTime).getTime();
+      // Wenn kein gültiges Datum vorhanden ist, sicherheitshalber behalten
+      if (isNaN(t)) return true;
+      return t >= cutoff;
+    });
+    removedOld += (history[name].length - kept.length);
+    if (kept.length === 0) {
+      delete history[name]; // leere Item-Einträge ganz entfernen
+    } else {
+      history[name] = kept;
+    }
+  }
+
   writeJson(HISTORY_FILE, history);
   writeJson(STATE_FILE, newState);
 
-  console.log(`Fertig. Aktive Auktionen: ${active.length}, neu archiviert: ${newlyArchived}.`);
+  console.log(`Fertig. Aktive Auktionen: ${active.length}, neu archiviert: ${newlyArchived}, alte entfernt (>${MAX_AGE_DAYS}d): ${removedOld}.`);
 }
 
 main();
