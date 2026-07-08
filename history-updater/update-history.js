@@ -101,34 +101,56 @@ async function main() {
   const now = Date.now();
   let newlyArchived = 0;
 
-  // 4) Beendete Auktionen finden: war vorher da, ist jetzt weg, Endzeit vorbei
+  // 4) Verkaufte/beendete Auktionen finden: war vorher da, ist jetzt weg.
+  //    Drei Fälle, wenn eine Auktion aus der Liste verschwindet:
+  //    a) Endzeit vorbei + Gebote  -> regulär ersteigert
+  //    b) Endzeit noch offen, aber Sofortkaufpreis vorhanden -> per Sofortkauf gekauft
+  //    c) Endzeit noch offen, kein Sofortkauf -> vorzeitig zurückgezogen (KEIN Verkauf)
   for (const [key, prevAuction] of Object.entries(prevAuctions)) {
     if (activeMap[key]) continue; // noch aktiv -> nichts tun
 
     const endMs = new Date(prevAuction.endTime).getTime();
-    // Nur als Verkauf werten, wenn die Auktion tatsächlich abgelaufen ist
-    // (mit kleiner Toleranz von 2 Min., falls die API leicht nachhängt).
-    if (isNaN(endMs) || endMs > now + 2 * 60 * 1000) continue;
+    if (isNaN(endMs)) continue;
 
-    // WICHTIG: Nur Auktionen MIT mindestens einem Gebot gelten als verkauft.
-    // Läuft eine Auktion ohne Gebot ab, geht das Item an den Verkäufer zurück -
-    // das ist KEIN Verkauf und gehört nicht in den Verlauf.
+    const expired = endMs <= now + 2 * 60 * 1000; // Endzeit (fast) erreicht
     const hadBids = prevAuction.bids && Object.keys(prevAuction.bids).length > 0;
-    if (!hadBids) continue;
+    const hasInstantBuy = prevAuction.instantBuyPrice != null && prevAuction.instantBuyPrice > 0;
+
+    // Ein Sofortkauf hinterlässt ein Gebot in Höhe des Sofortkaufpreises.
+    // Das ist das zuverlässigste Signal für "wurde per Sofortkauf gekauft".
+    let boughtViaInstant = false;
+    if (hasInstantBuy && hadBids) {
+      const highestBid = Math.max(...Object.values(prevAuction.bids).map(Number));
+      if (highestBid >= prevAuction.instantBuyPrice) boughtViaInstant = true;
+    }
+
+    let saleType = null;
+    if (boughtViaInstant) {
+      saleType = 'instant';        // per Sofortkauf gekauft (Gebot >= Sofortkaufpreis)
+    } else if (expired && hadBids) {
+      saleType = 'auction';        // regulär ersteigert (abgelaufen + Gebote)
+    }
+    // Alles andere (vor Ablauf verschwunden ohne Sofortkauf-Gebot, oder
+    // abgelaufen ohne Gebote) -> zurückgezogen/unverkauft, nicht archivieren.
+    if (!saleType) continue;
 
     const { highestBidder, finalPrice } = deriveWinner(prevAuction);
+    // Bei Sofortkauf ist der Endpreis der Sofortkaufpreis
+    const soldPrice = saleType === 'instant' ? prevAuction.instantBuyPrice : finalPrice;
 
     const sale = {
       id: key,
       seller: prevAuction.seller,
       highestBidder: highestBidder,
       startBid: prevAuction.startBid,
-      currentBid: prevAuction.currentBid ?? finalPrice,
-      finalPrice: finalPrice,
+      currentBid: prevAuction.currentBid ?? soldPrice,
+      finalPrice: soldPrice,
+      instantBuyPrice: prevAuction.instantBuyPrice ?? null,
+      saleType: saleType, // 'auction' oder 'instant'
       endTime: prevAuction.endTime,
-      soldAt: new Date(endMs).toISOString(),
+      soldAt: new Date(Math.min(endMs, now)).toISOString(),
       sold: true,
-      bids: prevAuction.bids || {},   // komplette Gebotshistorie mitspeichern
+      bids: prevAuction.bids || {},
       item: prevAuction.item
     };
 
@@ -153,6 +175,7 @@ async function main() {
       seller: a.seller,
       startBid: a.startBid,
       currentBid: a.currentBid,
+      instantBuyPrice: a.instantBuyPrice ?? null,
       endTime: a.endTime,
       bids: a.bids || {},
       item: a.item
