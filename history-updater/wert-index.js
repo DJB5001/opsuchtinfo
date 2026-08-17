@@ -163,8 +163,12 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
   const items = {};
   const spieler = {};
 
+  // ein, aus, verkauft, gewonnen — und an fünfter Stelle der Spielername,
+  // sobald namen.js ihn aufgelöst hat. Der hängt hier und nicht in einer
+  // eigenen Liste, weil die UUID sonst ein zweites Mal in der Datei
+  // stünde: 350 KB nur für Schlüssel, die schon da sind.
   const konto = (uuid) => {
-    if (!spieler[uuid]) spieler[uuid] = [0, 0, 0, 0]; // ein, aus, verkauft, gewonnen
+    if (!spieler[uuid]) spieler[uuid] = [0, 0, 0, 0];
     return spieler[uuid];
   };
 
