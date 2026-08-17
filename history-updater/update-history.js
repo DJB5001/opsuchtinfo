@@ -25,6 +25,12 @@ const API_URL = 'https://api.opsucht.net/auctions/active';
 const HISTORY_FILE = path.join(__dirname, '..', 'auction-history.json');
 const STATE_FILE = path.join(__dirname, 'state.json');
 
+// Die kleine Zusammenfassung für den Discord-Bot. Warum es sie gibt und
+// was drinsteht, erklärt wert-index.js.
+const { baueIndex } = require('./wert-index.js');
+const { ergaenzeNamen } = require('./namen.js');
+const INDEX_FILE = path.join(__dirname, '..', 'wert-index.json');
+
 // Wie viele Verkäufe pro Item maximal behalten werden (verhindert, dass
 // die Datei unendlich wächst). Bei Bedarf höher stellen.
 const MAX_SALES_PER_ITEM = 500;
@@ -208,7 +214,47 @@ async function main() {
   writeJson(HISTORY_FILE, history);
   writeJson(STATE_FILE, newState);
 
-  console.log(`Fertig. Aktive Auktionen: ${active.length}, neu archiviert: ${newlyArchived}, alte entfernt (>${MAX_AGE_DAYS}d): ${removedOld}.`);
+  // 6) Zusammenfassung für den Bot.
+  //
+  // Scheitert sie, ist das kein Grund, den Lauf als gescheitert zu
+  // melden: Der Verlauf selbst steht bereits sicher auf der Platte, und
+  // ein Bot ohne frischen Index zeigt eben die Zahlen von vorhin.
+  let indexZeile = '';
+  try {
+    const { index, entdoppelt } = baueIndex(history);
+
+    // Namen dazu, soweit sie bekannt sind. Aufgelöst wird nur ein
+    // Häppchen pro Lauf — warum, steht in namen.js. Auch hier gilt: Ein
+    // Aussetzer bei einem fremden Dienst darf den Index nicht kosten.
+    let namenZeile = '';
+    try {
+      const { namen, bericht } = await ergaenzeNamen(index.spieler);
+      // Fünfte Stelle der Spielerzeile, siehe wert-index.js.
+      for (const [uuid, name] of Object.entries(namen)) {
+        if (index.spieler[uuid]) index.spieler[uuid][4] = name;
+      }
+      namenZeile =
+        ` Namen: ${bericht.bekannt}/${bericht.gesamt} bekannt ` +
+        `(${bericht.neu} neu, ${bericht.leer} ohne Treffer` +
+        `${bericht.abgebrochen ? `, ${bericht.offen} vertagt — Zeitbudget` : ''}).`;
+    } catch (e) {
+      namenZeile = ` Namen nicht ergänzt: ${e.message}`;
+    }
+
+    writeJson(INDEX_FILE, index);
+    const groesse = Math.round(fs.statSync(INDEX_FILE).size / 1024);
+    indexZeile =
+      ` Index: ${Object.keys(index.items).length} Items, ` +
+      `${Object.keys(index.spieler).length} Spieler, ${groesse} KB ` +
+      `(${entdoppelt} Zwischenstände zusammengefasst).${namenZeile}`;
+  } catch (e) {
+    indexZeile = ` Index NICHT geschrieben: ${e.message}`;
+  }
+
+  console.log(
+    `Fertig. Aktive Auktionen: ${active.length}, neu archiviert: ${newlyArchived}, ` +
+      `alte entfernt (>${MAX_AGE_DAYS}d): ${removedOld}.${indexZeile}`
+  );
 }
 
 main();

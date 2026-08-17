@@ -37,7 +37,11 @@ jobs:
         run: |
           git config user.name "history-bot"
           git config user.email "actions@github.com"
-          git add auction-history.json shard-history.json history-updater/state.json history-updater/last-run.txt
+          # Jede Datei, die ein Lauf schreibt, muss hier stehen — was fehlt,
+          # baut der Lauf umsonst und der nächste Checkout wirft es weg.
+          git add auction-history.json shard-history.json wert-index.json \
+                  history-updater/state.json history-updater/namen.json \
+                  history-updater/last-run.txt
           if git diff --staged --quiet; then
             echo "Keine Änderungen."
           else
