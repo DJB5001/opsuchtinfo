@@ -240,7 +240,7 @@ if (!fs.existsSync(websitePfad)) {
   // Dieselbe Aufteilung benutzt DNV-Website/tests/index-test.mjs.
   const block =
     fenster[0] + '\n' +
-    schnipsel('const verzauberungsNamen = {', '// Ladeverhalten und Rückfallkette überall gleich sind.') +
+    schnipsel('const verzauberungsNamen = {', '// Rückfallbild, wenn auch das Typ-Bild') +
     schnipsel('// NETHERITE_PICKAXE wird zu', '// Rückfallkette für Item-Bilder') +
     schnipsel('function salePricePerUnit(sale)', 'function getMonthlyAveragePerUnit');
 
