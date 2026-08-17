@@ -15,8 +15,10 @@
 // Warum hier Code aus der Website steht
 // -------------------------------------
 // Die Funktionen unten sind aus DNV-Website/js/script.js übernommen:
-// salePricePerUnit, loreAlsText, itemVariante, variantenLabel,
-// verkaufsZeit, istFortsetzung, verlaufEntdoppeln.
+// salePricePerUnit, loreAlsText, verzauberungsStempel, itemVariante,
+// verzauberungsNamen, stufenZeichen, verzauberungName,
+// verzauberungenListe, variantenLabel, verkaufsZeit, istFortsetzung,
+// verlaufEntdoppeln.
 //
 // Sie wurden bewusst kopiert und nicht neu gedacht. Der Grund ist die
 // Entdopplung: Wird kurz vor Schluss noch geboten, verlängert sich die
@@ -46,9 +48,36 @@ function loreAlsText(item) {
   return Array.isArray(l) ? l.join('\n') : String(l);
 }
 
-/** Stabiler Schlüssel einer Variante; \u0000 kommt in keinem Feld vor. */
+/**
+ * Verzauberungen als sortierte Kette, z.B. "efficiency=5,mending=1".
+ *
+ * Sortiert, weil die Reihenfolge im JSON nicht verlässlich ist — sonst
+ * bekäme derselbe Gegenstand je nach Laune der API zwei Schlüssel. Der
+ * Namensraum "minecraft:" fällt weg, er steht vor jedem Eintrag.
+ */
+function verzauberungsStempel(item) {
+  const roh = item?.enchantments;
+  if (!roh || typeof roh !== 'object') return '';
+  return Object.entries(roh)
+    .map(([k, v]) => `${String(k).split(':').pop()}=${v}`)
+    .sort()
+    .join(',');
+}
+
+/**
+ * Stabiler Schlüssel einer Variante; \u0000 kommt in keinem Feld vor.
+ *
+ * Die Verzauberungen standen hier einmal ausdrücklich nicht drin, mit der
+ * Begründung, sie würden die Gruppen zersplittern. Die Zahlen sagen etwas
+ * anderes: 183 Gruppen mit 5.874 Verkäufen lagen dadurch in einem
+ * gemeinsamen Durchschnitt, in 18 davon weicht der Schnitt um Faktor 2
+ * bis 15 ab ("Normaler ★ Helm": 274 Verkäufe von Ø 25 Tsd bis Ø 155 Tsd).
+ * Und zersplittert wird nichts — die Varianten steigen von 3.278 auf
+ * 3.908, die tragfähigen mit mindestens fünf Verkäufen aber von 1.268 auf
+ * 1.275.
+ */
 function itemVariante(item) {
-  return `${item?.material ?? ''}\u0000${loreAlsText(item)}`;
+  return `${item?.material ?? ''}\u0000${loreAlsText(item)}\u0000${verzauberungsStempel(item)}`;
 }
 
 function materialLesbar(material) {
@@ -58,16 +87,82 @@ function materialLesbar(material) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Kurzes Unterscheidungsmerkmal, wenn zwei Dinge gleich heißen. */
-function variantenLabel(item) {
+const verzauberungsNamen = {
+  aqua_affinity: 'Wasseraffinität', bane_of_arthropods: 'Nemesis der Gliederfüßer',
+  binding_curse: 'Fluch der Bindung', blast_protection: 'Explosionsschutz',
+  breach: 'Bruch', channeling: 'Entladung', density: 'Wucht',
+  depth_strider: 'Tiefenläufer', efficiency: 'Effizienz', feather_falling: 'Federfall',
+  fire_aspect: 'Verbrennung', fire_protection: 'Feuerschutz', flame: 'Flamme',
+  fortune: 'Glück', frost_walker: 'Eisläufer', impaling: 'Harpune',
+  infinity: 'Unendlichkeit', knockback: 'Rückstoß', looting: 'Plünderung',
+  loyalty: 'Treue', luck_of_the_sea: 'Glück des Meeres', lure: 'Köder',
+  mending: 'Reparatur', multishot: 'Mehrfachschuss', piercing: 'Durchdringung',
+  power: 'Stärke', projectile_protection: 'Geschossschutz', protection: 'Schutz',
+  punch: 'Schlag', quick_charge: 'Schnellladen', respiration: 'Atmung',
+  riptide: 'Sog', sharpness: 'Schärfe', silk_touch: 'Behutsamkeit',
+  smite: 'Bann', soul_speed: 'Seelenläufer', sweeping_edge: 'Schwungkraft',
+  swift_sneak: 'Schleicher', thorns: 'Dornen', unbreaking: 'Haltbarkeit',
+  vanishing_curse: 'Fluch des Verschwindens', wind_burst: 'Windstoß',
+};
+
+const ROEMISCH = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+
+/* Minecraft schreibt Stufen römisch — aber nur bis zehn. Auf OPSUCHT gibt es
+   Haltbarkeit 160, und "CLX" liest niemand. */
+function stufenZeichen(stufe) {
+  const n = Number(stufe);
+  return n >= 1 && n <= 10 ? ROEMISCH[n] : String(stufe);
+}
+
+function verzauberungName(schluessel) {
+  const ohneRaum = String(schluessel).split(':').pop();
+  if (verzauberungsNamen[ohneRaum]) return verzauberungsNamen[ohneRaum];
+  // Unbekannt: wenigstens lesbar machen, statt den rohen Schlüssel zu zeigen
+  return ohneRaum
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** ["Behutsamkeit III", "Haltbarkeit 160"] — stärkste Verzauberung zuerst. */
+function verzauberungenListe(item) {
+  const roh = item?.enchantments;
+  if (!roh || typeof roh !== 'object') return [];
+
+  return Object.entries(roh)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .map(([schluessel, stufe]) => `${verzauberungName(schluessel)} ${stufenZeichen(stufe)}`);
+}
+
+/**
+ * Kurzes Unterscheidungsmerkmal, wenn zwei Dinge gleich heißen.
+ *
+ * Seltenheit und Verzauberungen stehen mit drin, weil zwei Ausführungen
+ * ohne das nicht zu unterscheiden waren: Die Knochenspitzhacke gibt es
+ * als "Episch" für Ø 220 Tsd und als "Jackpot" für Ø 5,5 Mio, und beide
+ * fielen auf "Netherite Pickaxe" zurück.
+ *
+ * mitVerzauberungen gibt es für die Auktionskarten der Website — dort
+ * stehen sie schon als eigene Abzeichen darunter. Der Index braucht sie,
+ * deshalb ist die Vorgabe true.
+ */
+function variantenLabel(item, { mitVerzauberungen = true } = {}) {
   const lore = loreAlsText(item);
   const teile = [];
 
   const typ = lore.match(/Gewinntyp\s*»\s*(.+)/);
   if (typ && typ[1].trim() && typ[1].trim() !== 'Item') teile.push(typ[1].trim());
 
+  const selten = lore.match(/Seltenheit\s*»\s*(.+)/);
+  if (selten && selten[1].trim()) teile.push(selten[1].trim());
+
   const zustand = lore.match(/Zustand:\s*(\S+)/);
   if (zustand) teile.push(zustand[1]);
+
+  if (mitVerzauberungen) {
+    const verzauberungen = verzauberungenListe(item);
+    if (verzauberungen.length) teile.push(verzauberungen.join(', '));
+  }
 
   if (!teile.length && item?.material) teile.push(materialLesbar(item.material));
   return teile.join(' · ');
@@ -151,6 +246,75 @@ function mittel(zahlen) {
 }
 
 /**
+ * Die reinen Beschreibungszeilen der Lore.
+ *
+ * Ohne die Angaben mit Doppelpunkt oder » — die stecken schon im Etikett —
+ * und ohne Zierlinien. Übrig bleibt der Fließtext, der bei manchen Items
+ * das Einzige ist, was zwei Ausführungen unterscheidet.
+ */
+function beschreibungsZeilen(item) {
+  return loreAlsText(item)
+    .split('\n')
+    .map((z) => z.trim())
+    .filter((z) => z && !/[»:]\s/.test(z) && !/^[─—\-_=]+$/.test(z));
+}
+
+/** Höchstens so lang wird ein Zusatz — Discord nimmt 100 Zeichen im Ganzen. */
+const ZUSATZ_MAX = 34;
+
+/**
+ * Gleich benannten Einträgen einen Zusatz geben, der sie unterscheidet.
+ *
+ * Warum das hier steht und nicht in variantenLabel(): Es braucht die
+ * ganze Gruppe. "Gray Bundle" gibt es zweimal — einmal "Enthält 1
+ * Boosterpack aus der Season of Summer" (Ø 191 Tsd), einmal "aus der
+ * Redstone Season" (Ø 125 Tsd). Erst im Vergleich zeigt sich, welche
+ * Zeile den Unterschied macht; für sich allein betrachtet ist jede
+ * Beschreibung gleich unauffällig. variantenLabel bleibt deshalb eine
+ * reine Funktion eines Items — es ist der Teil, den die Website teilt.
+ *
+ * Damit bleiben von 419 Namen mit mehreren Varianten noch 66 (16 %)
+ * doppeldeutig benannt, vorher waren es drei Viertel. Der Rest lässt sich
+ * nicht benennen: Dort sind Material, Lore-Text und Verzauberungen gleich,
+ * und getrennt werden die Einträge nur durch eine Eigenheit der API — ein
+ * doppelt aufgenommener "Gewinntyp »"-Block, ein Leerzeichen zu viel.
+ * H4CKER.exe etwa steht so zweimal da, mit Ø 257.710 und Ø 257.520; dass
+ * die Schnitte fast gleich sind, sagt schon, dass es dasselbe Item ist.
+ * Unterscheidbar bleiben sie im Auswahlmenü über die Zeile darunter, die
+ * Verkaufszahl und Durchschnitt nennt.
+ *
+ * Ändert die Einträge an Ort und Stelle.
+ */
+function unterscheideEtiketten(eintraege) {
+  const nachEtikett = new Map();
+  for (const e of eintraege) {
+    if (!nachEtikett.has(e.v)) nachEtikett.set(e.v, []);
+    nachEtikett.get(e.v).push(e);
+  }
+
+  for (const gruppe of nachEtikett.values()) {
+    if (gruppe.length < 2) continue;
+
+    // Zeilen, die alle teilen, unterscheiden nichts.
+    const zaehler = new Map();
+    for (const e of gruppe) {
+      for (const zeile of new Set(e.beschreibung ?? [])) {
+        zaehler.set(zeile, (zaehler.get(zeile) ?? 0) + 1);
+      }
+    }
+
+    for (const e of gruppe) {
+      const eigen = (e.beschreibung ?? []).filter((z) => zaehler.get(z) < gruppe.length);
+      if (!eigen.length) continue;
+
+      let zusatz = eigen.join(' ');
+      if (zusatz.length > ZUSATZ_MAX) zusatz = `${zusatz.slice(0, ZUSATZ_MAX - 1).trimEnd()}…`;
+      e.v = `${e.v} · ${zusatz}`;
+    }
+  }
+}
+
+/**
  * Baut die Zusammenfassung aus dem rohen Verlauf.
  *
  * jetzt ist überschreibbar, damit der Test mit festen Daten arbeiten
@@ -205,6 +369,13 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
         nachVariante.set(schluessel, {
           m: verkauf.item?.material ?? '',
           v: variantenLabel(verkauf.item),
+          // Der Verzauberungsstempel wandert mit in die Datei. Nur damit
+          // kann der Bot eine laufende Auktion der richtigen Variante
+          // zuordnen — sonst vergleicht der Schnäppchen-Alarm eine
+          // schlicht verzauberte Spitzhacke mit dem Schnitt der gut
+          // verzauberten und meldet einen Rabatt, den es nicht gibt.
+          e: verzauberungsStempel(verkauf.item),
+          beschreibung: beschreibungsZeilen(verkauf.item),
           preise: [],
           tage: new Map(),
         });
@@ -227,17 +398,21 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
       eintraege.push({
         m: e.m,
         v: e.v,
+        e: e.e,
         n: e.preise.length,
         d: mittel(e.preise),
         min: Math.min(...e.preise),
         max: Math.max(...e.preise),
         t: tage,
+        beschreibung: e.beschreibung,
       });
     }
 
     // Die häufigste Variante zuerst: Wer den Namen eingibt, meint fast
     // immer die, die es am häufigsten gibt.
     eintraege.sort((a, b) => b.n - a.n);
+    unterscheideEtiketten(eintraege);
+    for (const e of eintraege) delete e.beschreibung;
     if (eintraege.length) items[name] = eintraege;
   }
 
@@ -266,9 +441,13 @@ module.exports = {
   baueIndex,
   // Für den Test und für alle, die die Logik gegen die Website halten wollen.
   salePricePerUnit,
+  verzauberungsStempel,
   itemVariante,
+  verzauberungenListe,
   variantenLabel,
   verkaufsZeit,
   istFortsetzung,
   verlaufEntdoppeln,
+  unterscheideEtiketten,
+  beschreibungsZeilen,
 };

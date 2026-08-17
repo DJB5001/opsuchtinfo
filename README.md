@@ -38,9 +38,30 @@ Verlängerte Auktionen sind dabei zusammengefasst — wird kurz vor Schluss
 noch geboten, hält der Verlauf jeden Zwischenstand als eigenen Eintrag
 fest, gut 16 % aller Einträge. Dafür steht derselbe Code hier wie in
 `DNV-Website/js/script.js`, und `wert-index.test.js` lässt beide
-Fassungen über dieselben Daten laufen. Weichen sie ab, nennt der Bot
-andere Durchschnitte als die Website — zwei Quellen, die sich
-widersprechen, sind schlimmer als eine.
+Fassungen über alle 41.000 Verkäufe laufen und vergleicht das Ergebnis
+Funktion für Funktion. Weichen sie ab, nennt der Bot andere
+Durchschnitte als die Website — zwei Quellen, die sich widersprechen,
+sind schlimmer als eine.
+
+### Getrennt wird nach Material, Lore und Verzauberungen
+
+Zwei Dinge können denselben Namen tragen und nichts miteinander zu tun
+haben. Die Knochenspitzhacke gibt es als „Episch" für Ø 220 Tsd und als
+„Jackpot" für Ø 5,5 Mio.
+
+Die Verzauberungen waren dabei lange nicht berücksichtigt, mit der
+Begründung, sie würden die Gruppen zersplittern. Nachgemessen stimmt das
+nicht: **183 Gruppen mit 5.874 Verkäufen** lagen dadurch in einem
+gemeinsamen Durchschnitt, in 18 davon weicht der Schnitt um Faktor 2 bis
+15 ab. Und zersplittert wird nichts — die Varianten steigen von 3.278 auf
+3.908, die tragfähigen mit mindestens fünf Verkäufen aber von 1.268 auf
+1.275: Vermengte Gruppen zerfallen in saubere, die einzeln über der
+Schwelle bleiben.
+
+Jeder Eintrag trägt den Verzauberungsstempel als `e` mit. Nur damit kann
+der Bot eine laufende Auktion der richtigen Ausführung zuordnen — sonst
+vergleicht der Schnäppchen-Alarm eine schlicht verzauberte Spitzhacke mit
+dem Schnitt der gut verzauberten.
 
 ## Die Händlernamen
 
