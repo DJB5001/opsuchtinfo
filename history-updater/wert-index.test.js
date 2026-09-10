@@ -59,8 +59,8 @@ const verlauf = {
     verkauf({ preis: 1000, zeit: vorTagen(5) }),
     // Dieselbe Ware als Sammelkarte: eigenes Material, eigener Preis.
     verkauf({ preis: 4, zeit: vorTagen(3), material: 'PAPER', lore: ['', 'Gewinntyp » Sammelkarte'] }),
-    // Zu alt für das 30-Tage-Fenster, zählt aber für die Spielerbilanz.
-    verkauf({ preis: 5000, zeit: vorTagen(45) }),
+    // Zu alt für das Fenster, zählt aber für die Spielerbilanz.
+    verkauf({ preis: 5000, zeit: vorTagen(120) }),
   ],
   'Stapel Steine': [
     verkauf({ preis: 640, zeit: vorTagen(1), name: 'Stapel Steine', material: 'STONE', menge: 64 }),
@@ -92,12 +92,48 @@ pruefe('Tage sind aufsteigend', tage[0] < tage[1], tage.join(' < '));
 pruefe('Der Tag mit zwei Verkäufen mittelt', hacke.t[tage[1]][0] === 2 && hacke.t[tage[1]][1] === 850,
   JSON.stringify(hacke.t[tage[1]]));
 
+// Tiefst- und Höchstpreis je Tag kamen dazu, damit Bot und Website die
+// Spanne eines kürzeren Fensters rechnen können. Die beiden alten Stellen
+// bleiben, wo sie waren — das ist die Zusage an alles, was schon liest.
+pruefe('Je Tag stehen vier Werte', Object.values(hacke.t).every((w) => w.length === 4),
+  JSON.stringify(hacke.t[tage[1]]));
+pruefe('Spanne des Tages mit zwei Verkäufen',
+  hacke.t[tage[1]][2] === 800 && hacke.t[tage[1]][3] === 900, JSON.stringify(hacke.t[tage[1]]));
+pruefe('Ein Tag mit einem Verkauf hat Spanne null',
+  hacke.t[tage[0]][2] === hacke.t[tage[0]][3] && hacke.t[tage[0]][2] === hacke.t[tage[0]][1],
+  JSON.stringify(hacke.t[tage[0]]));
+
+// Die Gegenprobe auf die Zusage: Wer wie bisher [anzahl, preis]
+// auseinandernimmt, bekommt weiter Anzahl und Tagesschnitt.
+const [altAnzahl, altPreis] = hacke.t[tage[1]];
+pruefe('Alte Leser lesen weiter richtig', altAnzahl === 2 && altPreis === 850,
+  `${altAnzahl} × ${altPreis}`);
+
 const summeTage = Object.values(hacke.t).reduce((s, [n]) => s + n, 0);
 pruefe('Die Tage ergeben zusammen die Gesamtzahl', summeTage === hacke.n, `${summeTage} von ${hacke.n}`);
 
 // Preis pro Stück, nicht pro Auktion.
 const stein = index.items['Stapel Steine'][0];
 pruefe('Preis gilt pro Stück', stein.d === 10, `${stein.d}`);
+
+// ── 1a. Das Fenster reicht 90 Tage zurück ───────────────────────────
+console.log('\n— Wie weit der Index zurückreicht —');
+
+const weitZurueck = eigen.baueIndex(
+  {
+    Alteisen: [
+      verkauf({ preis: 100, zeit: vorTagen(45), name: 'Alteisen', material: 'IRON_INGOT' }),
+      verkauf({ preis: 200, zeit: vorTagen(89), name: 'Alteisen', material: 'IRON_INGOT' }),
+      verkauf({ preis: 999, zeit: vorTagen(91), name: 'Alteisen', material: 'IRON_INGOT' }),
+    ],
+  },
+  JETZT
+).index;
+
+pruefe('Der Index nennt sein Fenster', weitZurueck.tage === 90, `${weitZurueck.tage}`);
+const eisen = weitZurueck.items['Alteisen'][0];
+pruefe('45 und 89 Tage alt sind drin, 91 nicht mehr', eisen.n === 2, `${eisen.n}`);
+pruefe('Und der Schnitt ist der der beiden', eisen.d === 150, `${eisen.d}`);
 
 // ── 1b. Verzauberungen trennen Varianten ────────────────────────────
 console.log('\n— Verzauberungen —');

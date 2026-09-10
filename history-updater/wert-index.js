@@ -7,9 +7,15 @@
 // kann das nicht.
 //
 // Deshalb entsteht bei jedem Lauf zusätzlich diese Zusammenfassung:
-// je Item und Variante die Zahlen der letzten 30 Tage, dazu die Bilanz
-// jedes Spielers. Rund 700 KB statt 34 MB, über die Leitung gezippt
-// etwa 150 KB.
+// je Item und Variante die Zahlen der letzten 90 Tage, dazu die Bilanz
+// jedes Spielers. Rund 2 MB statt 34 MB, über die Leitung gezippt ein
+// Bruchteil davon.
+//
+// Warum 90 und nicht mehr: Weiter zurück gibt es nichts. Der Verlauf
+// daneben räumt selbst auf (MAX_AGE_DAYS in update-history.js) und wirft
+// alles über 90 Tage weg. Der Index ist ein Zwischenspeicher für das,
+// was gezeigt wird, und reicht genau so weit wie das Archiv daneben —
+// diese Zahl hochzusetzen, ohne dort dasselbe zu tun, füllt nichts.
 //
 //
 // Warum hier Code aus der Website steht
@@ -33,7 +39,15 @@
 // =====================================================================
 
 const VERLAENGERUNG_FENSTER_MS = 10 * 60 * 1000;
-const TAGE = 30;
+/**
+ * Wie weit der Index zurückreicht. Der Bot und die Website lassen den
+ * Zeitraum wählen (15, 30, 90) und rechnen ihn aus der Tagesreihe neu —
+ * hier steht nur, wie viel Reihe überhaupt mitkommt.
+ *
+ * Gleichauf mit MAX_AGE_DAYS in update-history.js: Mehr wäre leer, und
+ * weniger würfe Daten weg, die schon dastehen.
+ */
+const TAGE = 90;
 
 // ── Aus DNV-Website/js/script.js ─────────────────────────────────────
 
@@ -349,7 +363,7 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
       const zeit = verkaufsZeit(verkauf);
       const preis = Math.round(salePricePerUnit(verkauf));
 
-      // Die Spielerbilanz zählt den ganzen Verlauf, nicht nur 30 Tage:
+      // Die Spielerbilanz zählt den ganzen Verlauf, nicht nur das Fenster:
       // Sie beantwortet "wie viel hat jemand insgesamt umgesetzt".
       if (verkauf.seller) {
         const k = konto(verkauf.seller);
@@ -391,9 +405,15 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
     const eintraege = [];
     for (const e of nachVariante.values()) {
       if (!e.preise.length) continue;
+      // [Anzahl, Schnitt, Tiefst-, Höchstpreis] — angehängt, nicht
+      // umgestellt: Wer wie bisher die ersten zwei Stellen ausliest,
+      // merkt von den beiden neuen nichts. Sie stehen hier, weil sich
+      // die Spanne eines kürzeren Fensters sonst nicht rechnen ließe;
+      // der Schnitt ließe sich aus Anzahl und Tagesschnitt gewichtet
+      // herleiten, Tiefst- und Höchstpreis nicht.
       const tage = {};
       for (const [tag, preise] of [...e.tage].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-        tage[tag] = [preise.length, mittel(preise)];
+        tage[tag] = [preise.length, mittel(preise), Math.min(...preise), Math.max(...preise)];
       }
       eintraege.push({
         m: e.m,
