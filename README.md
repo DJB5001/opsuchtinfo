@@ -31,8 +31,22 @@ zurückgezogen und zählt nicht.
 
 `wert-index.json` entsteht bei jedem Lauf mit (`history-updater/wert-index.js`).
 Der Bot soll auf `/wert` in Sekunden antworten; 34 MB je Befehl zu laden
-geht nicht. Also je Item und Variante die Zahlen der letzten 30 Tage,
+geht nicht. Also je Item und Variante die Zahlen der letzten 90 Tage,
 dazu die Bilanz jedes Spielers.
+
+Je Variante steht eine **Tagesreihe** darin: `{ "2026-08-15": [anzahl,
+schnitt, min, max] }`. Daraus rechnen Bot und Website den Zeitraum, den
+jemand sehen will (15, 30 oder 90 Tage) — mit der Anzahl je Tag
+gewichtet, ergibt das denselben Schnitt, als hätte man die einzelnen
+Verkäufe gemittelt. Die beiden hinteren Werte kamen später dazu; wer wie
+bisher `[anzahl, schnitt]` ausliest, merkt davon nichts.
+
+Warum 90 Tage und nicht alles: `auction-history.json` hält daneben
+**jeden einzelnen Verkauf dauerhaft**, und der Index wird bei jedem Lauf
+komplett daraus neu gebaut. Es geht also nichts verloren — wer eines
+Tages 180 Tage zeigen will, ändert `TAGE` in `wert-index.js` und hat sie
+einen Lauf später, rückwirkend. Der Index ist ein Zwischenspeicher für
+das, was gezeigt wird, kein zweites Archiv.
 
 Verlängerte Auktionen sind dabei zusammengefasst — wird kurz vor Schluss
 noch geboten, hält der Verlauf jeden Zwischenstand als eigenen Eintrag
