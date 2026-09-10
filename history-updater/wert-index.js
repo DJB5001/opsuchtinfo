@@ -11,12 +11,11 @@
 // jedes Spielers. Rund 2 MB statt 34 MB, über die Leitung gezippt ein
 // Bruchteil davon.
 //
-// Warum 90 und nicht alles: Der Verlauf daneben hält jeden einzelnen
-// Verkauf dauerhaft, und der Index wird bei jedem Lauf komplett daraus
-// neu gebaut. Es geht also nichts verloren — wer eines Tages 180 Tage
-// zeigen will, ändert hier eine Zahl und hat sie einen Lauf später,
-// rückwirkend. Der Index ist ein Zwischenspeicher für das, was gezeigt
-// wird, kein zweites Archiv.
+// Warum 90 und nicht mehr: Weiter zurück gibt es nichts. Der Verlauf
+// daneben räumt selbst auf (MAX_AGE_DAYS in update-history.js) und wirft
+// alles über 90 Tage weg. Der Index ist ein Zwischenspeicher für das,
+// was gezeigt wird, und reicht genau so weit wie das Archiv daneben —
+// diese Zahl hochzusetzen, ohne dort dasselbe zu tun, füllt nichts.
 //
 //
 // Warum hier Code aus der Website steht
@@ -44,6 +43,9 @@ const VERLAENGERUNG_FENSTER_MS = 10 * 60 * 1000;
  * Wie weit der Index zurückreicht. Der Bot und die Website lassen den
  * Zeitraum wählen (15, 30, 90) und rechnen ihn aus der Tagesreihe neu —
  * hier steht nur, wie viel Reihe überhaupt mitkommt.
+ *
+ * Gleichauf mit MAX_AGE_DAYS in update-history.js: Mehr wäre leer, und
+ * weniger würfe Daten weg, die schon dastehen.
  */
 const TAGE = 90;
 
