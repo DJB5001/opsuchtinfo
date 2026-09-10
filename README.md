@@ -41,12 +41,17 @@ gewichtet, ergibt das denselben Schnitt, als hätte man die einzelnen
 Verkäufe gemittelt. Die beiden hinteren Werte kamen später dazu; wer wie
 bisher `[anzahl, schnitt]` ausliest, merkt davon nichts.
 
-Warum 90 Tage und nicht alles: `auction-history.json` hält daneben
-**jeden einzelnen Verkauf dauerhaft**, und der Index wird bei jedem Lauf
-komplett daraus neu gebaut. Es geht also nichts verloren — wer eines
-Tages 180 Tage zeigen will, ändert `TAGE` in `wert-index.js` und hat sie
-einen Lauf später, rückwirkend. Der Index ist ein Zwischenspeicher für
-das, was gezeigt wird, kein zweites Archiv.
+Warum 90 Tage: Weiter zurück gibt es nichts. `auction-history.json`
+räumt selbst auf — `MAX_AGE_DAYS = 90` in `update-history.js` wirft
+ältere Verkäufe weg, und `MAX_SALES_PER_ITEM = 500` deckelt die
+allerhäufigsten Items (bei 2.579 Items betrifft das vier). Der Index ist
+ein Zwischenspeicher für das, was gezeigt wird, und reicht damit genau so
+weit wie das Archiv daneben.
+
+Wer mehr will, muss **zuerst** `MAX_AGE_DAYS` hochsetzen und dann warten:
+Was einmal gelöscht ist, kommt nicht zurück, und rückwirkend lässt sich
+nichts holen. Kostenpunkt: Der Verlauf ist bei 37 Tagen 34 MB groß und
+wird alle 15 Minuten committet.
 
 Verlängerte Auktionen sind dabei zusammengefasst — wird kurz vor Schluss
 noch geboten, hält der Verlauf jeden Zwischenstand als eigenen Eintrag
