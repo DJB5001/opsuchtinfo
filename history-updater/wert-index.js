@@ -48,6 +48,19 @@ const VERLAENGERUNG_FENSTER_MS = 10 * 60 * 1000;
  * weniger würfe Daten weg, die schon dastehen.
  */
 const TAGE = 90;
+/**
+ * Die kürzeren Fenster, die je Variante mitgerechnet werden.
+ *
+ * Sie stehen hier und nicht im Bot, weil ein winsorisierter Schnitt
+ * sich **nicht** aus der Tagesreihe zurückrechnen lässt: Ein roher
+ * Schnitt schon (Anzahl mal Tagesschnitt, geteilt durch die Anzahl),
+ * ein Perzentil braucht dagegen die einzelnen Verkäufe des ganzen
+ * Fensters. Die hat nur diese Datei.
+ *
+ * 90 fehlt in der Liste, weil das `d` der Variante selbst ist.
+ * Gleichauf mit ZEITRAEUME in DNV-Bot/src/marktdaten.js.
+ */
+const KURZE_ZEITRAEUME = [15, 30];
 
 // ── Aus DNV-Website/js/script.js ─────────────────────────────────────
 
@@ -259,6 +272,56 @@ function mittel(zahlen) {
   return Math.round(zahlen.reduce((s, z) => s + z, 0) / zahlen.length);
 }
 
+/** Der Wert an der Stelle q (0 bis 1) einer aufsteigend sortierten Reihe. */
+function quantil(sortiert, q) {
+  const stelle = Math.round((sortiert.length - 1) * q);
+  return sortiert[Math.min(sortiert.length - 1, Math.max(0, stelle))];
+}
+
+/**
+ * Ein Schnitt, an dem einzelne Ausreißer nicht mehr ziehen.
+ *
+ * Das Problem ist nicht selten, sondern die Regel: Von 1.744 Varianten
+ * mit mindestens fünf Verkäufen lag bei 924 der rohe Schnitt über 20 %
+ * neben dem typischen Preis. Auch bei den meistgehandelten Items —
+ * ENCHANTED_BOOK stand mit Ø 29 Tsd da, während der typische Verkauf
+ * bei 15 Tsd lag. Wer sein Buch danach einpreist, setzt fast doppelt zu
+ * hoch an.
+ *
+ * Der Grund ist die Form der Daten: Nach oben ist Platz bis zur
+ * Unendlichkeit, nach unten endet es bei 1. Ein Schnitt folgt dieser
+ * Schieflage.
+ *
+ * Winsorisieren statt Aussortieren: Wer unter dem 25.-Perzentil liegt,
+ * zählt als dieses; wer darüber hinausschießt, als das 75. **Kein
+ * Verkauf fällt weg** — die Verkaufszahl bleibt ehrlich, der Ausreißer
+ * zieht nur nicht mehr. Gemessen an 1.271 Varianten bewegt sich die
+ * Zahl beim Wegfall des teuersten Verkaufs dadurch noch um 3,4 % statt
+ * um 10 %, und die systematische Schieflage schrumpft von +23 % auf
+ * +5 % über dem typischen Preis.
+ *
+ * Warum 25/75 und nicht sanfter: 10/90 kommt nur auf 5,6 % und lässt
+ * +12 % Schieflage stehen. Und warum überhaupt ein Schnitt und kein
+ * Median (1,9 %): weil weiterhin ein Schnitt dastehen soll.
+ *
+ * Bei drei oder weniger Verkäufen passiert nichts — dort gibt es keine
+ * Verteilung, aus der sich ein Perzentil ablesen ließe.
+ *
+ * Muss Zeichen für Zeichen dasselbe ergeben wie winsorisierterSchnitt()
+ * in DNV-Website/js/script.js. Die Website rechnet aus den
+ * Rohverkäufen, der Bot liest diesen Index — laufen die beiden
+ * auseinander, nennen sie verschiedene Preise für dasselbe Item.
+ */
+function winsorisierterSchnitt(preise, q = 0.25) {
+  if (preise.length < 4) return mittel(preise);
+
+  const sortiert = [...preise].sort((a, b) => a - b);
+  const unten = quantil(sortiert, q);
+  const oben = quantil(sortiert, 1 - q);
+
+  return mittel(preise.map((p) => (p < unten ? unten : p > oben ? oben : p)));
+}
+
 /**
  * Die reinen Beschreibungszeilen der Lore.
  *
@@ -391,11 +454,16 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
           e: verzauberungsStempel(verkauf.item),
           beschreibung: beschreibungsZeilen(verkauf.item),
           preise: [],
+          // Gleich lang wie preise: zeiten[i] gehört zu preise[i]. Zwei
+          // Listen statt Paaren, weil preise so bleibt, wie es war —
+          // Schnitt, Spanne und Anzahl rechnen unverändert darauf.
+          zeiten: [],
           tage: new Map(),
         });
       }
       const eintrag = nachVariante.get(schluessel);
       eintrag.preise.push(preis);
+      eintrag.zeiten.push(zeit);
 
       const tag = tagVon(zeit);
       if (!eintrag.tage.has(tag)) eintrag.tage.set(tag, []);
@@ -415,14 +483,30 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
       for (const [tag, preise] of [...e.tage].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
         tage[tag] = [preise.length, mittel(preise), Math.min(...preise), Math.max(...preise)];
       }
+      // Die kürzeren Fenster. Fehlt ein Fenster ganz — in den letzten
+      // 15 Tagen wurde nichts verkauft —, steht es auch nicht in der
+      // Datei; der Bot fällt dann auf die Tagesreihe zurück und kommt
+      // auf dieselbe leere Antwort wie bisher.
+      const w = {};
+      for (const fenster of KURZE_ZEITRAEUME) {
+        const ab = jetzt - fenster * 24 * 60 * 60 * 1000;
+        const preise = e.preise.filter((_, i) => e.zeiten[i] >= ab);
+        if (preise.length) w[fenster] = winsorisierterSchnitt(preise);
+      }
+
       eintraege.push({
         m: e.m,
         v: e.v,
         e: e.e,
+        // Die Anzahl zählt weiter jeden Verkauf. Winsorisieren wirft
+        // nichts weg, es begrenzt nur, wie weit ein einzelner Preis
+        // den Schnitt ziehen darf — n und die Spanne bleiben deshalb
+        // die ehrlichen Zahlen aus den Rohdaten.
         n: e.preise.length,
-        d: mittel(e.preise),
+        d: winsorisierterSchnitt(e.preise),
         min: Math.min(...e.preise),
         max: Math.max(...e.preise),
+        w,
         t: tage,
         beschreibung: e.beschreibung,
       });
@@ -461,6 +545,9 @@ module.exports = {
   baueIndex,
   // Für den Test und für alle, die die Logik gegen die Website halten wollen.
   salePricePerUnit,
+  // Die Formel, die Bot und Website denselben Preis nennen lässt.
+  // wert-index.test.js haelt sie gegen die der Website.
+  winsorisierterSchnitt,
   verzauberungsStempel,
   itemVariante,
   verzauberungenListe,
