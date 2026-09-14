@@ -326,6 +326,74 @@ const nurAlt = eigen.baueIndex(
 pruefe('Ohne Verkauf im Fenster steht dort nichts',
   Object.keys(nurAlt.w).length === 0, JSON.stringify(nurAlt.w));
 
+// ── 1e. Die einzelnen Verkäufe fürs Diagramm ────────────────────────
+//
+// Das Bild bei /wert zeichnete einen Punkt je Tag — den Tagesschnitt.
+// Ein Tag mit dreißig Verkäufen war ein Punkt. Anders ging es nicht: Die
+// einzelnen Verkäufe standen nicht im Index. Jetzt stehen sie als `p`
+// darin, flach und chronologisch: [Minute, Preis, Minute, Preis, …].
+console.log('\n— Die einzelnen Verkäufe —');
+
+const minuten = [];
+const preise = [];
+for (let i = 0; i + 1 < glueckslos.p.length; i += 2) {
+  minuten.push(glueckslos.p[i]);
+  preise.push(glueckslos.p[i + 1]);
+}
+
+pruefe('Jeder Verkauf steht einzeln drin', preise.length === glueckslos.n,
+  `${preise.length} von ${glueckslos.n}`);
+pruefe('Immer paarweise Minute und Preis', glueckslos.p.length === glueckslos.n * 2,
+  `${glueckslos.p.length}`);
+
+// Chronologisch, damit der Zeichner nicht sortieren muss — und damit die
+// Datei sich zwischen zwei Läufen möglichst wenig ändert.
+pruefe('Chronologisch geordnet', minuten.every((m, i) => i === 0 || m >= minuten[i - 1]),
+  `${minuten[0]} … ${minuten[minuten.length - 1]}`);
+
+// Die Minute zählt seit der Unix-Epoche. Absolut und nicht "vor jetzt",
+// weil diese Datei alle 15 Minuten committet wird: Bei Abständen zu
+// jetzt änderte sich mit jedem Lauf jede Zahl, und git könnte nichts
+// mehr zusammenfassen.
+const alsZeit = (minute) => new Date(minute * 60_000).toISOString();
+pruefe('Die Minute zählt seit der Epoche, nicht ab jetzt',
+  alsZeit(minuten[minuten.length - 1]) === vorTagen(3, 20).replace(/\.\d+Z$/, '.000Z'),
+  `${alsZeit(minuten[minuten.length - 1])} statt ${vorTagen(3, 20)}`);
+
+// Die älteste Preisstufe zuerst, der Mondpreis zuletzt — er war der
+// späteste Verkauf des jüngsten Tages.
+pruefe('Erst die älteste Preisstufe', preise[0] === 4000, `${preise[0]}`);
+pruefe('Zuletzt der Mondpreis', preise[preise.length - 1] === 90_000, `${preise[preise.length - 1]}`);
+
+const wieOft = (p) => preise.filter((x) => x === p).length;
+pruefe('Alle Preisstufen vollständig',
+  wieOft(4000) === 8 && wieOft(2000) === 8 && wieOft(1000) === 8 && wieOft(90_000) === 1,
+  `4000×${wieOft(4000)} 2000×${wieOft(2000)} 1000×${wieOft(1000)} 90000×${wieOft(90_000)}`);
+
+// Die schärfste Prüfung: Aus `p` allein lässt sich die Tagesreihe Zahl
+// für Zahl nachbauen. Damit steht fest, dass die beiden dieselben
+// Verkäufe beschreiben — und zugleich, warum `t` trotzdem bleibt: Ein
+// Bot, der noch nicht neu ausgerollt ist, liest nur sie.
+const nachgebaut = {};
+for (let i = 0; i + 1 < glueckslos.p.length; i += 2) {
+  const tag = new Date(glueckslos.p[i] * 60_000).toISOString().slice(0, 10);
+  (nachgebaut[tag] ??= []).push(glueckslos.p[i + 1]);
+}
+const ausP = Object.fromEntries(
+  Object.entries(nachgebaut).map(([tag, ps]) => [
+    tag,
+    [ps.length, Math.round(ps.reduce((a, b) => a + b, 0) / ps.length), Math.min(...ps), Math.max(...ps)],
+  ])
+);
+pruefe('Die Tagesreihe lässt sich daraus nachbauen',
+  JSON.stringify(ausP) === JSON.stringify(glueckslos.t),
+  JSON.stringify(ausP) === JSON.stringify(glueckslos.t) ? '' : JSON.stringify(ausP));
+
+// Und die Gegenprobe für den Randfall: Eine Variante, deren Verkäufe
+// alle im Fenster liegen, aber nur einer ist.
+pruefe('Auch ein einzelner Verkauf steht als Paar da',
+  nurAlt.p.length === 2 && nurAlt.p[1] === 50, JSON.stringify(nurAlt.p));
+
 // ── 2. Spielerbilanz ────────────────────────────────────────────────
 console.log('\n— Spielerbilanz —');
 
