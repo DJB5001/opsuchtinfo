@@ -209,6 +209,123 @@ pruefe('Und zwar die Zeile, die sie unterscheidet',
 pruefe('Die gemeinsame Zeile steht nicht dabei',
   bundles.every((b) => !b.v.includes('Enthält 1 Boosterpack')), bundles[0].v);
 
+// ── 1c. Ausreißer ziehen den Schnitt nicht mehr ─────────────────────
+console.log('\n— Ausreißer —');
+
+// Der Rechenweg, von Hand nachvollziehbar. Sechs Verkäufe zu 100, dann
+// 700, 800, 900 — und einer zu 50.000:
+//
+//   sortiert    100 100 100 100 100 100 700 800 900 50000
+//   Stelle       0   1   2   3   4   5   6   7   8    9
+//   25 %  →  Stelle round(9 × 0,25) = 2  →  100
+//   75 %  →  Stelle round(9 × 0,75) = 7  →  800
+//
+// Der 50.000er zählt damit als 800, die 900 ebenso, sonst ändert sich
+// nichts:  (100×6 + 700 + 800 + 800 + 800) ÷ 10 = 3.700 ÷ 10 = 370.
+const preisreihe = [100, 100, 100, 100, 100, 100, 700, 800, 900, 50_000];
+
+pruefe('Der Schnitt liegt beim typischen Preis', eigen.winsorisierterSchnitt(preisreihe) === 370,
+  `${eigen.winsorisierterSchnitt(preisreihe)}`);
+
+// Zum Vergleich, was heute dastünde: Ein einziger Verkauf macht aus 370
+// eine 5.300 — das Vierzehnfache.
+const rohSchnitt = Math.round(preisreihe.reduce((a, b) => a + b, 0) / preisreihe.length);
+pruefe('Der rohe Schnitt läge weit daneben', rohSchnitt === 5300, `${rohSchnitt}`);
+
+// Und die Gegenprobe zur anderen Seite: Es ist weiter ein Schnitt und
+// kein Median. Der läge hier bei 100 und würde die 700er, 800er und
+// 900er komplett unterschlagen.
+pruefe('Es bleibt ein Schnitt, kein Median', eigen.winsorisierterSchnitt(preisreihe) !== 100,
+  `winsorisiert ${eigen.winsorisierterSchnitt(preisreihe)}, Median 100`);
+
+// Wo die Preise sauber sind, passiert fast nichts. Das ist die Zusage,
+// dass hier nicht pauschal nach unten gedrückt wird.
+const sauber = [1000, 1050, 1100, 1150, 1200, 1250, 1300, 1350];
+const sauberRoh = Math.round(sauber.reduce((a, b) => a + b, 0) / sauber.length);
+pruefe('Saubere Preise bleiben, wo sie sind',
+  Math.abs(eigen.winsorisierterSchnitt(sauber) - sauberRoh) / sauberRoh < 0.05,
+  `${eigen.winsorisierterSchnitt(sauber)} statt ${sauberRoh}`);
+
+// Unter vier Verkäufen gibt es keine Verteilung, aus der sich ein
+// Perzentil ablesen ließe — dann bleibt es beim gewöhnlichen Mittel.
+pruefe('Ein einzelner Verkauf ist der Preis', eigen.winsorisierterSchnitt([777]) === 777);
+pruefe('Zwei Verkäufe werden gemittelt', eigen.winsorisierterSchnitt([10, 1000]) === 505,
+  `${eigen.winsorisierterSchnitt([10, 1000])}`);
+pruefe('Drei Verkäufe auch', eigen.winsorisierterSchnitt([1, 2, 3]) === 2,
+  `${eigen.winsorisierterSchnitt([1, 2, 3])}`);
+
+// ── 1d. Der Index rechnet damit, je Zeitraum ────────────────────────
+console.log('\n— Die Zeiträume im Index —');
+
+// Drei Preisstufen in drei Zeitfenstern, dazu ein Mondpreis. Die
+// Verkäufe liegen Stunden auseinander, damit verlaufEntdoppeln() sie
+// nicht für Zwischenstände derselben Auktion hält.
+const preisstufe = (preis, tag, wieviele) =>
+  Array.from({ length: wieviele }, (_, i) =>
+    verkauf({ preis, zeit: vorTagen(tag, 1 + i), name: 'Glückslos', material: 'PAPER' }));
+
+const glueckslos = eigen.baueIndex(
+  {
+    'Glückslos': [
+      ...preisstufe(1000, 3, 8),
+      verkauf({ preis: 90_000, zeit: vorTagen(3, 20), name: 'Glückslos', material: 'PAPER' }),
+      ...preisstufe(2000, 22, 8),
+      ...preisstufe(4000, 65, 8),
+    ],
+  },
+  JETZT
+).index.items['Glückslos'][0];
+
+// 25 Verkäufe, einer davon der Mondpreis:
+//   90 Tage  sortiert 1000×8, 2000×8, 4000×8, 90000
+//            25 % → Stelle 6 → 1000,  75 % → Stelle 18 → 4000
+//            (1000×8 + 2000×8 + 4000×8 + 4000) ÷ 25 = 60.000 ÷ 25 = 2.400
+const rohGesamt = Math.round((1000 * 8 + 90_000 + 2000 * 8 + 4000 * 8) / 25);
+pruefe('Der 90-Tage-Schnitt ist gedämpft', glueckslos.d === 2400, `${glueckslos.d} statt roh ${rohGesamt}`);
+pruefe('Roh wäre er mehr als doppelt so hoch', rohGesamt === 5840, `${rohGesamt}`);
+
+// Die Zusage, die Winsorisieren vom Aussortieren unterscheidet: Es wird
+// nichts weggeworfen. Alle 25 Verkäufe zählen weiter, der Mondpreis
+// steht weiter in der Spanne.
+pruefe('Die Verkaufszahl ändert sich nicht', glueckslos.n === 25, `${glueckslos.n}`);
+pruefe('Die Spanne zeigt den Ausreißer weiter',
+  glueckslos.min === 1000 && glueckslos.max === 90_000, `${glueckslos.min}–${glueckslos.max}`);
+
+// Die kürzeren Fenster stehen fertig in der Datei — der Bot kann sie
+// nicht selbst rechnen, weil ein Perzentil die einzelnen Verkäufe
+// braucht und er nur die Tagesreihe hat.
+pruefe('w trägt beide kurzen Zeiträume',
+  Object.keys(glueckslos.w).sort().join(',') === '15,30', Object.keys(glueckslos.w).join(','));
+
+//   15 Tage  nur die 1000er und der Mondpreis; 25 % und 75 % sind beide
+//            1000, also zählt auch er als 1000 → Schnitt 1.000
+//   30 Tage  dazu die 2000er: 25 % → 1000, 75 % → 2000
+//            (1000×8 + 2000×8 + 2000) ÷ 17 = 26.000 ÷ 17 = 1.529
+pruefe('15 Tage: nur die jüngste Preisstufe', glueckslos.w[15] === 1000, `${glueckslos.w[15]}`);
+pruefe('30 Tage: die beiden jüngeren zusammen', glueckslos.w[30] === 1529, `${glueckslos.w[30]}`);
+pruefe('Und alle drei Zeiträume unterscheiden sich',
+  glueckslos.w[15] !== glueckslos.w[30] && glueckslos.w[30] !== glueckslos.d,
+  `${glueckslos.w[15]} / ${glueckslos.w[30]} / ${glueckslos.d}`);
+
+// Die Tagesreihe bleibt roh. Sie trägt das Diagramm und die Zählungen,
+// und an einem einzelnen Tag gibt es zu wenige Verkäufe, als dass
+// Winsorisieren dort etwas hieße.
+const mondtag = Object.entries(glueckslos.t).find(([, [, , , max]]) => max === 90_000);
+pruefe('Der Mondpreis steht noch in seinem Tag', Boolean(mondtag),
+  mondtag ? `${mondtag[0]}: ${JSON.stringify(mondtag[1])}` : 'nicht gefunden');
+pruefe('Die Tage ergeben zusammen weiter alle Verkäufe',
+  Object.values(glueckslos.t).reduce((s, [n]) => s + n, 0) === glueckslos.n,
+  `${Object.values(glueckslos.t).reduce((s, [n]) => s + n, 0)} von ${glueckslos.n}`);
+
+// Ein Fenster ohne Verkauf steht gar nicht erst drin — der Bot fällt
+// dann auf die Tagesreihe zurück und kommt auf dieselbe leere Antwort.
+const nurAlt = eigen.baueIndex(
+  { 'Alteisen': [verkauf({ preis: 50, zeit: vorTagen(70), name: 'Alteisen', material: 'IRON_INGOT' })] },
+  JETZT
+).index.items['Alteisen'][0];
+pruefe('Ohne Verkauf im Fenster steht dort nichts',
+  Object.keys(nurAlt.w).length === 0, JSON.stringify(nurAlt.w));
+
 // ── 2. Spielerbilanz ────────────────────────────────────────────────
 console.log('\n— Spielerbilanz —');
 
@@ -285,7 +402,8 @@ if (!fs.existsSync(websitePfad)) {
   vm.runInContext(
     block +
       '\nglobalThis.__api = { verlaufEntdoppeln, itemVariante, variantenLabel, ' +
-      'salePricePerUnit, verzauberungsStempel, verzauberungenListe };',
+      'salePricePerUnit, verzauberungsStempel, verzauberungenListe, ' +
+      'winsorisierterSchnitt };',
     kontext
   );
   const website = kontext.__api;
@@ -349,6 +467,47 @@ if (!fs.existsSync(websitePfad)) {
       abweichend ? `${abweichend} abweichend, z.B. ${ersteAbweichung}` : ''
     );
   }
+
+  // Der Schnitt bekommt keinen einzelnen Verkauf, sondern die Preisreihe
+  // einer ganzen Variante — genau das, worauf er im Betrieb arbeitet.
+  // Läuft er auf beiden Seiten auseinander, nennt der Bot andere Preise
+  // als die Seite, und niemand merkt, welche der beiden stimmt.
+  const reihenNachVariante = new Map();
+  for (const [name, liste] of Object.entries(wB.verlauf)) {
+    if (!Array.isArray(liste)) continue;
+    for (const s of liste) {
+      if (!s?.item) continue;
+      const k = `${name}::${eigen.itemVariante(s.item)}`;
+      if (!reihenNachVariante.has(k)) reihenNachVariante.set(k, []);
+      reihenNachVariante.get(k).push(Math.round(eigen.salePricePerUnit(s)));
+    }
+  }
+
+  let schnittAbweichend = 0;
+  let ersterUnterschied = null;
+  for (const [k, preise] of reihenNachVariante) {
+    const a = website.winsorisierterSchnitt(preise);
+    const b = eigen.winsorisierterSchnitt(preise);
+    if (a !== b) {
+      schnittAbweichend++;
+      // Der Schlüssel trägt Lore-Zeilen und ein NUL als Trenner. Roh in
+      // die Meldung gesetzt macht er sie mehrzeilig und die Ausgabe für
+      // grep zur Binärdatei — genau dann, wenn man sie lesen will. Nur
+      // fürs Anzeigen gekürzt; verglichen wird über den ganzen.
+      if (!ersterUnterschied) {
+        const lesbar = k.replace(/[\x00-\x1f]+/g, ' ').slice(0, 80);
+        ersterUnterschied = `${lesbar}: Website ${a} ≠ Index ${b}`;
+      }
+    }
+  }
+  pruefe(`Gleicher Schnitt bei allen ${reihenNachVariante.size} Varianten`,
+    schnittAbweichend === 0, ersterUnterschied ?? '');
+
+  // Und dass dieser Abgleich überhaupt etwas prüft: Wären die Reihen
+  // alle zu kurz für ein Perzentil, liefe er durch, ohne die Formel je
+  // anzufassen.
+  const langGenug = [...reihenNachVariante.values()].filter((p) => p.length >= 4).length;
+  pruefe('Und genug davon sind lang genug für die Formel', langGenug > 100, `${langGenug}`);
 
   // Und die Etiketten müssen benutzbar bleiben: Discord nimmt im
   // Auswahlmenü 100 Zeichen, alles darüber schneidet /wert ab.
