@@ -35,9 +35,28 @@ geht nicht. Also je Item und Variante die Zahlen der letzten 90 Tage,
 dazu die Bilanz jedes Spielers.
 
 Je Variante steht eine **Tagesreihe** darin: `{ "2026-08-15": [anzahl,
-schnitt, min, max] }`. Sie trägt das Diagramm und die Zählungen. Die
-beiden hinteren Werte kamen später dazu; wer wie bisher
-`[anzahl, schnitt]` ausliest, merkt davon nichts.
+schnitt, min, max] }`. Sie trägt die Zählungen und den Trend. Die beiden
+hinteren Werte kamen später dazu; wer wie bisher `[anzahl, schnitt]`
+ausliest, merkt davon nichts.
+
+Daneben stehen die **einzelnen Verkäufe** als `p`, flach und
+chronologisch: `[minute, preis, minute, preis, …]`. Sie tragen das
+Diagramm — vorher zeichnete es einen Punkt je Tag, also den
+Tagesschnitt, und ein Tag mit dreißig Verkäufen wurde ein Punkt. Der Bot
+konnte es nicht besser, er hatte die einzelnen Verkäufe nicht.
+
+Die Minute zählt **seit der Unix-Epoche**, nicht als Abstand zu jetzt.
+Das ist keine Geschmacksfrage: Diese Datei wird alle 15 Minuten
+committet. Bei Abständen änderte sich mit jedem Lauf jede einzelne Zahl,
+und git könnte nichts mehr zusammenfassen — das Repo ist schon 60 MB
+groß. Absolut geschrieben ändern sich nur die neu dazugekommenen
+Verkäufe. Höchstens 1000 je Variante (gemessenes Maximum: 470); die
+Kappe ist nur dafür da, dass ein einzelner Artikel die Datei nicht
+sprengt.
+
+Die Tagesreihe bliebe damit rechnerisch überflüssig — sie ließe sich aus
+`p` nachbauen, und `wert-index.test.js` prüft genau das. Sie bleibt
+trotzdem: Ein Bot, der noch nicht neu ausgerollt ist, liest nur sie.
 
 Der **Schnitt je Zeitraum** steht fertig daneben: `d` für 90 Tage,
 `w: { "15": …, "30": … }` für die kürzeren. Früher rechnete der Bot ihn
