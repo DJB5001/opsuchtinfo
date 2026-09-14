@@ -9,7 +9,7 @@ sie laufen, und danach ist die Information weg.
 
 | Datei | Was drinsteht |
 |---|---|
-| `auction-history.json` | Jeder erkannte Verkauf der letzten 90 Tage, nach Itemnamen sortiert. ~34 MB |
+| `auction-history.json` | Jeder erkannte Verkauf der letzten 90 Tage, nach Itemnamen sortiert. ~60 MB |
 | `shard-history.json` | Verlauf der Shard-Preise |
 | `wert-index.json` | Zusammenfassung für den Discord-Bot. ~1 MB |
 | `history-updater/state.json` | Die zuletzt gesehenen aktiven Auktionen — daraus ergibt sich, was verkauft wurde |
@@ -30,16 +30,23 @@ zurückgezogen und zählt nicht.
 ## Der Wert-Index
 
 `wert-index.json` entsteht bei jedem Lauf mit (`history-updater/wert-index.js`).
-Der Bot soll auf `/wert` in Sekunden antworten; 34 MB je Befehl zu laden
+Der Bot soll auf `/wert` in Sekunden antworten; 60 MB je Befehl zu laden
 geht nicht. Also je Item und Variante die Zahlen der letzten 90 Tage,
 dazu die Bilanz jedes Spielers.
 
 Je Variante steht eine **Tagesreihe** darin: `{ "2026-08-15": [anzahl,
-schnitt, min, max] }`. Daraus rechnen Bot und Website den Zeitraum, den
-jemand sehen will (15, 30 oder 90 Tage) — mit der Anzahl je Tag
-gewichtet, ergibt das denselben Schnitt, als hätte man die einzelnen
-Verkäufe gemittelt. Die beiden hinteren Werte kamen später dazu; wer wie
-bisher `[anzahl, schnitt]` ausliest, merkt davon nichts.
+schnitt, min, max] }`. Sie trägt das Diagramm und die Zählungen. Die
+beiden hinteren Werte kamen später dazu; wer wie bisher
+`[anzahl, schnitt]` ausliest, merkt davon nichts.
+
+Der **Schnitt je Zeitraum** steht fertig daneben: `d` für 90 Tage,
+`w: { "15": …, "30": … }` für die kürzeren. Früher rechnete der Bot ihn
+aus der Tagesreihe zurück — mit der Anzahl je Tag gewichtet ergibt ein
+roher Schnitt dasselbe, als hätte man die einzelnen Verkäufe gemittelt.
+Seit die Ausreißer gedämpft werden, geht das nicht mehr: Ein Perzentil
+braucht die einzelnen Verkäufe, und die hat nur dieses Repo. Fehlt `w`
+im Index — ein Stand von vor dieser Änderung —, fällt der Bot auf die
+gewichtete Rechnung zurück, bis die Action einmal durchgelaufen ist.
 
 Warum 90 Tage: Weiter zurück gibt es nichts. `auction-history.json`
 räumt selbst auf — `MAX_AGE_DAYS = 90` in `update-history.js` wirft
@@ -50,17 +57,50 @@ weit wie das Archiv daneben.
 
 Wer mehr will, muss **zuerst** `MAX_AGE_DAYS` hochsetzen und dann warten:
 Was einmal gelöscht ist, kommt nicht zurück, und rückwirkend lässt sich
-nichts holen. Kostenpunkt: Der Verlauf ist bei 37 Tagen 34 MB groß und
-wird alle 15 Minuten committet.
+nichts holen. Kostenpunkt: Der Verlauf wächst mit jedem Tag Archiv — bei
+68 Tagen und 76.000 Verkäufen sind es 60 MB —, und committet wird alle
+15 Minuten.
 
 Verlängerte Auktionen sind dabei zusammengefasst — wird kurz vor Schluss
 noch geboten, hält der Verlauf jeden Zwischenstand als eigenen Eintrag
 fest, gut 16 % aller Einträge. Dafür steht derselbe Code hier wie in
 `DNV-Website/js/script.js`, und `wert-index.test.js` lässt beide
-Fassungen über alle 41.000 Verkäufe laufen und vergleicht das Ergebnis
-Funktion für Funktion. Weichen sie ab, nennt der Bot andere
+Fassungen über jeden Verkauf des echten Verlaufs laufen und vergleicht
+das Ergebnis Funktion für Funktion. Weichen sie ab, nennt der Bot andere
 Durchschnitte als die Website — zwei Quellen, die sich widersprechen,
 sind schlimmer als eine.
+
+### Ausreißer zählen nicht voll mit
+
+Einzelne viel zu teure Verkäufe verschoben den Schnitt so stark, dass er
+als Preisempfehlung unbrauchbar war. Und das war kein Sonderfall: Von
+1.744 Varianten mit mindestens fünf Verkäufen lag bei **924** der Schnitt
+über 20 % neben dem typischen Preis. Bei `ENCHANTED_BOOK` standen Ø 29
+Tsd, gehandelt wurde für 15 Tsd — wer sein Buch danach einpreist, setzt
+fast doppelt zu hoch an. Der Grund ist die Form der Daten: Nach oben ist
+Platz bis zur Unendlichkeit, nach unten endet es bei 1.
+
+Seitdem wird **winsorisiert** (`winsorisierterSchnitt()`): Was unter dem
+25.-Perzentil liegt, zählt als dieses; was über das 75. hinausschießt,
+als jenes. Gemessen an den 1.271 Varianten mit mindestens acht
+Verkäufen — Maß ist, wie weit die Zahl springt, wenn der teuerste
+Verkauf wegfällt:
+
+| | Bewegung | liegt über dem typischen Preis |
+|---|---|---|
+| Schnitt vorher | 10,0 % | +23 % |
+| **winsorisiert 25/75** | **3,4 %** | **+5 %** |
+| (Median, zum Vergleich) | 1,9 % | +0 % |
+
+**Es bleibt ein Schnitt, und es bleibt bei allen Verkäufen.** `n` zählt
+weiter jeden einzelnen, `min` und `max` bleiben die echten Extreme — der
+Verkauf für 250 Tsd verschwindet nicht, er zieht nur nicht mehr an der
+Hauptzahl. Die Tagesreihe bleibt ebenfalls roh: An einem einzelnen Tag
+gibt es zu wenige Verkäufe, als dass ein Perzentil dort etwas hieße.
+
+Dieselbe Formel steht in `DNV-Website/js/script.js`. Sie muss Zeichen
+für Zeichen dieselbe sein — `wert-index.test.js` vergleicht beide über
+alle Varianten des echten Verlaufs.
 
 ### Getrennt wird nach Material, Lore und Verzauberungen
 
