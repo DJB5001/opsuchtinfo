@@ -61,6 +61,14 @@ const TAGE = 90;
  * Gleichauf mit ZEITRAEUME in DNV-Bot/src/marktdaten.js.
  */
 const KURZE_ZEITRAEUME = [15, 30];
+/**
+ * Wie viele Einzelverkäufe je Variante höchstens mitkommen (die neuesten).
+ *
+ * Gemessenes Maximum sind 470 — die Kappe greift heute nirgends. Sie
+ * steht hier, damit ein einzelner Artikel die Datei nicht sprengen kann,
+ * wenn jemand anfängt, im Minutentakt Steine zu verkaufen.
+ */
+const MAX_EINZELVERKAEUFE = 1000;
 
 // ── Aus DNV-Website/js/script.js ─────────────────────────────────────
 
@@ -494,6 +502,30 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
         if (preise.length) w[fenster] = winsorisierterSchnitt(preise);
       }
 
+      // Die einzelnen Verkäufe fürs Diagramm.
+      //
+      // Das Bild bei /wert zeichnete bisher einen Punkt je Tag — den
+      // Tagesschnitt. Ein Tag mit 30 Verkäufen war ein Punkt, und weil
+      // es über 90 Tage mehr Punkte als Platz gab, fielen sie ganz weg.
+      // Der Bot konnte es nicht besser: Er hatte die einzelnen Verkäufe
+      // gar nicht.
+      //
+      // Aufbau: flach, [Minute, Preis, Minute, Preis, …], chronologisch.
+      // Flach statt Paaren spart 0,12 MB und kostet beim Lesen nichts.
+      //
+      // Die Minute zählt **seit der Unix-Epoche**, nicht von jetzt
+      // zurück. Das ist keine Geschmacksfrage: Diese Datei wird alle 15
+      // Minuten committet. Bei Abständen zu jetzt änderte sich mit jedem
+      // Lauf jede einzelne Zahl, und git könnte nichts mehr
+      // zusammenfassen — das Repo ist schon 60 MB groß. Absolut
+      // geschrieben ändern sich nur die neu dazugekommenen Verkäufe.
+      const verkaeufe = e.preise
+        .map((preis, i) => [e.zeiten[i], preis])
+        .sort((a, b) => a[0] - b[0])
+        .slice(-MAX_EINZELVERKAEUFE);
+      const p = [];
+      for (const [zeit, preis] of verkaeufe) p.push(Math.round(zeit / 60000), preis);
+
       eintraege.push({
         m: e.m,
         v: e.v,
@@ -507,6 +539,11 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
         min: Math.min(...e.preise),
         max: Math.max(...e.preise),
         w,
+        p,
+        // Die Tagesreihe bleibt, obwohl p dieselben Zahlen hergäbe. Sie
+        // trägt die Zählungen, den Trend und den Rückfall für einen Bot,
+        // der noch nicht neu ausgerollt ist. Ohne sie sagte /wert
+        // zwischen "Index neu" und "Bot neu" für alles "keine Daten".
         t: tage,
         beschreibung: e.beschreibung,
       });
