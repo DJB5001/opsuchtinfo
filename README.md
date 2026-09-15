@@ -158,10 +158,18 @@ Dass es dasselbe ist, sagten die Preise: Median 15 Mio bei beiden.
 
 `loreSchluessel()` glättet deshalb, was nichts über den Gegenstand
 aussagt: Leerzeilen, doppelten Leerraum (eine Zeile `" "` statt `""`
-trennte zwei Varianten) und den Wirkungsort in Klammern am Zeilenende.
-Die Liste dafür ist mit Absicht kurz — „(3 Minuten)" gegen
-„(5 Minuten)" ist ein echter Unterschied. Angezeigt wird weiter der
-volle Text; geglättet wird nur zum Vergleichen.
+trennte zwei Varianten), den Wirkungsort in Klammern am Zeilenende und
+das **Signaturdatum**. Die Liste für den Wirkungsort ist mit Absicht
+kurz — „(3 Minuten)" gegen „(5 Minuten)" ist ein echter Unterschied.
+Angezeigt wird weiter der volle Text; geglättet wird nur zum
+Vergleichen.
+
+Beim Datum ist es derselbe Fall: „Signiert von SweetDreamzzz am
+09.07.2026" gegen „… am 11.07.2026" ist dasselbe Schwert mit einer
+anderen Seriennummer. Das Traumschwert stand deshalb mit **31 Zeilen**
+im Auswahlmenü, 30 davon mit identischem Text, alle um 111.111
+gehandelt — jetzt sind es sieben. **Der Signierende bleibt im
+Schlüssel**: „von SweetDreamzzz" gegen „von scusy" trennt weiter.
 
 ### Und gleich benannt heißt nicht gleich
 
@@ -175,10 +183,36 @@ genau so sehen die `➥ Effekt:`-Zeilen aus. Dem Etiketten-Unterscheider
 blieb nichts übrig. Jetzt überleben sie den Filter — „Gewinntyp »" und
 „Seltenheit »" bleiben draußen, die stehen schon im Etikett.
 
+### Und der Effekt gehört ins Etikett
+
+Der **Yamakuza Roller** stand mit zwölf Zeilen im Auswahlmenü, und jede
+hieß „Golden Horse Armor". Das Item hat weder Seltenheit noch
+Verzauberungen, also griff `variantenLabel()` zum Materialnamen — dabei
+steht die Auskunft in der Lore:
+
+```
+➥ Effekt: +60% Geschwindigkeit (Hände, Kopf)
+➥ Effekt: +10 Herzen (Hände, Kopf)
+```
+
+`effekte()` holt sie heraus, ohne Präfix und ohne Klammerzusatz, und
+`variantenLabel()` setzt sie dorthin, **wo keine Verzauberungsliste
+steht**. Aus zwölfmal „Golden Horse Armor" wird „+60% Geschwindigkeit,
++10 Herzen", „+180% Geschwindigkeit, +10 Herzen" und so weiter.
+
+Die Bedingung ist der Punkt, an dem es sonst kippt: Ohne sie gemessen —
+den Effekt immer dazu — springen die Etiketten über 100 Zeichen von 141
+auf **382**. Bei Rüstung und Werkzeug ist der Effekt nämlich bei jeder
+Ausführung derselbe (Propellerhut hat überall „Sanfter Fall") und
+verdrängt nur die Verzauberungen, an denen man sie wirklich
+auseinanderhält. Effekte tragen Talismane und Schmuck,
+Verzauberungslisten Rüstung und Werkzeug; die beiden schließen sich
+fast aus.
+
 Gemessen am echten Verlauf sinkt die Zahl der Einträge, die unter ihrem
-Namen ununterscheidbar bleiben, von **968 auf 403**. Null wird es nie:
-Manche Ausführungen trennt nur eine Spielersignatur oder ein doppelt
-geliefertes Textstück.
+Namen ununterscheidbar bleiben, von **968 über 403 auf 269**. Null wird
+es nie: Manche Ausführungen trennt nur ein doppelt geliefertes
+Textstück.
 
 ## Die Händlernamen
 
