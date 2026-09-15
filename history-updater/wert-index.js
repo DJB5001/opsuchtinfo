@@ -101,11 +101,22 @@ function loreAlsText(item) {
 const WIRKUNGSORT = /\s*\((?:Off-Hand|Off Hand|Hand|Hände|Haende|Kopf|Inventar)[^()]*\)$/i;
 
 /**
+ * Das Datum einer Signatur, am Zeilenende.
+ *
+ * "Signiert von SweetDreamzzz am 09.07.2026" — der Signierende sagt
+ * etwas über den Gegenstand, das Datum ist eine Seriennummer. Das
+ * Traumschwert stand deshalb mit 31 Zeilen im Auswahlmenü, 30 davon mit
+ * demselben Text und alle um 111.111 gehandelt. Nur das Datum fällt
+ * weg; "von SweetDreamzzz" gegen "von scusy" trennt weiter.
+ */
+const SIGNATURDATUM = /\s*am\s+\d{1,2}\.\d{1,2}\.\d{2,4}\s*$/;
+
+/**
  * Die Lore, wie sie den Variantenschlüssel bestimmt.
  *
  * Geglättet wird nur, was nichts über den Gegenstand aussagt:
  * Leerzeilen, doppelter Leerraum — eine Zeile " " statt "" trennte
- * bisher zwei Varianten — und der Wirkungsort oben.
+ * bisher zwei Varianten —, der Wirkungsort und das Signaturdatum.
  *
  * loreAlsText() bleibt daneben unverändert: Angezeigt wird weiter der
  * echte Text samt "(Off-Hand)". Geglättet wird nur zum Vergleichen.
@@ -113,7 +124,7 @@ const WIRKUNGSORT = /\s*\((?:Off-Hand|Off Hand|Hand|Hände|Haende|Kopf|Inventar)
 function loreSchluessel(item) {
   return loreAlsText(item)
     .split('\n')
-    .map((z) => z.trim().replace(/\s+/g, ' ').replace(WIRKUNGSORT, ''))
+    .map((z) => z.trim().replace(/\s+/g, ' ').replace(WIRKUNGSORT, '').replace(SIGNATURDATUM, ''))
     .filter(Boolean)
     .join('\n');
 }
@@ -205,6 +216,31 @@ function verzauberungenListe(item) {
 }
 
 /**
+ * Was ein Gegenstand kann, als kurze Liste.
+ *
+ * Die Lore schreibt das als "➥ Effekt: +60% Geschwindigkeit
+ * (Hände, Kopf)". Fürs Etikett bleibt "+60% Geschwindigkeit": Das
+ * Präfix steht vor jeder solchen Zeile, und der Klammerzusatz ist bei
+ * allen Ausführungen desselben Items derselbe — im Etikett ist er
+ * reine Länge.
+ *
+ * Hier fliegt **jede** Endklammer raus, nicht nur die Liste aus
+ * WIRKUNGSORT. Die beiden haben verschiedene Aufgaben: Der Schlüssel
+ * entscheidet, was zusammengelegt wird, und da ist Vorsicht geboten;
+ * das Etikett muss nur kurz und lesbar sein. Bleiben zwei Ausführungen
+ * danach gleich benannt, hängt unterscheideEtiketten() die Zeile an,
+ * die sie trennt.
+ */
+function effekte(item) {
+  return loreAlsText(item)
+    .split('\n')
+    .map((z) => z.trim())
+    .filter((z) => /^➥\s*Effekt\s*:/.test(z))
+    .map((z) => z.replace(/^➥\s*Effekt\s*:\s*/, '').replace(/\s*\([^()]*\)$/, '').replace(/\.$/, '').trim())
+    .filter(Boolean);
+}
+
+/**
  * Kurzes Unterscheidungsmerkmal, wenn zwei Dinge gleich heißen.
  *
  * Seltenheit und Verzauberungen stehen mit drin, weil zwei Ausführungen
@@ -229,10 +265,28 @@ function variantenLabel(item, { mitVerzauberungen = true } = {}) {
   const zustand = lore.match(/Zustand:\s*(\S+)/);
   if (zustand) teile.push(zustand[1]);
 
-  if (mitVerzauberungen) {
-    const verzauberungen = verzauberungenListe(item);
-    if (verzauberungen.length) teile.push(verzauberungen.join(', '));
+  const verzauberungen = mitVerzauberungen ? verzauberungenListe(item) : [];
+
+  // Der Effekt kommt dorthin, wo keine Verzauberungsliste steht.
+  //
+  // Ohne diese Bedingung gemessen — den Effekt immer dazu — springen die
+  // Etiketten über 100 Zeichen von 141 auf 382. Bei Rüstung und Werkzeug
+  // ist der Effekt nämlich bei jeder Ausführung derselbe (Propellerhut
+  // hat überall "Sanfter Fall") und verdrängt nur die Verzauberungen, an
+  // denen man sie wirklich auseinanderhält. Effekte tragen Talismane und
+  // Schmuck, Verzauberungslisten Rüstung und Werkzeug; die beiden
+  // schließen sich fast aus.
+  //
+  // Dafür ersetzt der Effekt den Materialnamen, und das war der Anlass:
+  // Der Yamakuza Roller hat weder Seltenheit noch Verzauberungen, also
+  // standen zwölf Ausführungen als "Golden Horse Armor" im Menü — von
+  // +60 % bis +180 % Geschwindigkeit, bei Schnitten von 4,6 bis 155 Mio.
+  if (!verzauberungen.length) {
+    const koennen = effekte(item);
+    if (koennen.length) teile.push(koennen.join(', '));
   }
+
+  if (verzauberungen.length) teile.push(verzauberungen.join(', '));
 
   if (!teile.length && item?.material) teile.push(materialLesbar(item.material));
   return teile.join(' · ');
@@ -628,6 +682,7 @@ module.exports = {
   // Beides steht ebenso in der Website; wert-index.test.js vergleicht sie.
   loreSchluessel,
   beschreibungsZeilen,
+  effekte,
   // Die Formel, die Bot und Website denselben Preis nennen lässt.
   // wert-index.test.js haelt sie gegen die der Website.
   winsorisierterSchnitt,

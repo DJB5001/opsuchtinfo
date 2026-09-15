@@ -498,6 +498,104 @@ pruefe('Der Schlüssel nicht',
   eigen.loreSchluessel(mitOrt) === '➥ Effekt: +60% Geschwindigkeit',
   eigen.loreSchluessel(mitOrt));
 
+// ── 1h. Das Etikett sagt, was das Ding kann ─────────────────────────
+//
+// Gemeldet wurde das Auswahlmenü von /wert: Beim Yamakuza Roller
+// standen zwölf Zeilen, und jede hieß "Golden Horse Armor". Das Item
+// hat weder Seltenheit noch Verzauberungen, also griff variantenLabel()
+// zum Materialnamen — dabei steht die Auskunft in der Lore.
+console.log('\n— Was im Auswahlmenü steht —');
+
+const rollerLore = (...effekte) => [
+  '',
+  ...effekte.map((e) => `➥ Effekt: ${e} (Hände, Kopf)`),
+  '',
+  'Gewinntyp » Item',
+];
+
+const rollerIndex = (ench, ...stufen) =>
+  eigen.baueIndex(
+    {
+      'Yamakuza Roller': stufen.map((prozent, i) =>
+        verkauf({
+          preis: prozent * 100_000, zeit: vorTagen(2, 1 + i),
+          name: 'Yamakuza Roller', material: 'GOLDEN_HORSE_ARMOR',
+          lore: rollerLore(`+${prozent}% Geschwindigkeit`, '+10 Herzen'), ench,
+        })
+      ),
+    },
+    JETZT
+  ).index.items['Yamakuza Roller'];
+
+const ohneVerzauberung = rollerIndex({}, 60, 180);
+pruefe('Ohne Verzauberungen steht der Effekt im Etikett',
+  ohneVerzauberung[0].v === '+60% Geschwindigkeit, +10 Herzen', ohneVerzauberung[0].v);
+pruefe('Und der Materialname kommt nicht mehr vor',
+  ohneVerzauberung.every((v) => !v.v.includes('Golden Horse Armor')),
+  ohneVerzauberung.map((v) => v.v).join(' | '));
+pruefe('Die Stärke unterscheidet die Zeilen',
+  ohneVerzauberung[0].v !== ohneVerzauberung[1].v && ohneVerzauberung[1].v.includes('+180%'),
+  ohneVerzauberung.map((v) => v.v).join('  ≠  '));
+
+// Die Gegenprobe, und sie ist der Grund für die Bedingung: Wo eine
+// Verzauberungsliste steht, kommt der Effekt **nicht** dazu. Gemessen
+// ohne diese Bedingung springen die Etiketten über 100 Zeichen von 141
+// auf 382 — bei Rüstung und Werkzeug ist der Effekt bei jeder
+// Ausführung derselbe und verdrängt nur die Verzauberungen, an denen
+// man sie wirklich auseinanderhält.
+const mitVerzauberung = rollerIndex({ 'minecraft:efficiency': 5 }, 60);
+pruefe('Mit Verzauberungen bleibt es bei ihnen',
+  mitVerzauberung[0].v === 'Effizienz V', mitVerzauberung[0].v);
+pruefe('Und der Effekt bläht das Etikett nicht auf',
+  !mitVerzauberung[0].v.includes('Geschwindigkeit'), mitVerzauberung[0].v);
+
+// Der Klammerzusatz fällt im Etikett weg — im Text steht er weiter.
+pruefe('Das Präfix und die Klammer sind aus dem Effekt raus',
+  eigen.effekte({ lore: ['➥ Effekt: +60% Geschwindigkeit (Hände, Kopf)'] })[0] === '+60% Geschwindigkeit',
+  eigen.effekte({ lore: ['➥ Effekt: +60% Geschwindigkeit (Hände, Kopf)'] })[0]);
+pruefe('Auch eine Klammer, die kein Wirkungsort ist',
+  eigen.effekte({ lore: ['➥ Effekt: 30 Minuten Haste II (Rechtsklick)'] })[0] === '30 Minuten Haste II',
+  eigen.effekte({ lore: ['➥ Effekt: 30 Minuten Haste II (Rechtsklick)'] })[0]);
+
+// ── 1i. Das Signaturdatum ist eine Seriennummer ─────────────────────
+//
+// "SweetDreamzzz Traumschwert" stand mit 31 Zeilen im Menü, 30 davon
+// mit demselben Text. Der einzige Unterschied war der Tag, an dem
+// signiert wurde — gleiches Schwert, gleiche Verzauberungen, alle um
+// 111.111 gehandelt.
+console.log('\n— Signiert von wem, nicht wann —');
+
+const signiert = (...zeilen) =>
+  eigen.baueIndex(
+    {
+      Traumschwert: zeilen.map((z, i) =>
+        verkauf({
+          preis: 111_111, zeit: vorTagen(2, 1 + i),
+          name: 'Traumschwert', material: 'NETHERITE_SWORD',
+          lore: ['', 'Traumschwert... aus Träumen werden', '', z],
+        })
+      ),
+    },
+    JETZT
+  ).index.items['Traumschwert'];
+
+const nurDatum = signiert(
+  'Signiert von SweetDreamzzz am 09.07.2026',
+  'Signiert von SweetDreamzzz am 11.07.2026',
+  'Signiert von SweetDreamzzz am 12.07.2026'
+);
+pruefe('Verschiedene Tage sind dasselbe Schwert', nurDatum.length === 1, `${nurDatum.length}`);
+pruefe('Und alle drei Verkäufe stehen darin', nurDatum[0]?.n === 3, `${nurDatum[0]?.n}`);
+
+// Die Gegenprobe: Der Signierende sagt etwas über den Gegenstand und
+// trennt weiter. Ein Fix, der auch den wegwirft, wäre keiner.
+const verschiedeneHand = signiert(
+  'Signiert von SweetDreamzzz am 09.07.2026',
+  'Signiert von scusy am 09.07.2026'
+);
+pruefe('Verschiedene Signierende bleiben getrennt', verschiedeneHand.length === 2,
+  `${verschiedeneHand.length}`);
+
 // ── 2. Spielerbilanz ────────────────────────────────────────────────
 console.log('\n— Spielerbilanz —');
 
@@ -576,7 +674,7 @@ if (!fs.existsSync(websitePfad)) {
       '\nglobalThis.__api = { verlaufEntdoppeln, itemVariante, variantenLabel, ' +
       'salePricePerUnit, verzauberungsStempel, verzauberungenListe, ' +
       'winsorisierterSchnitt, loreSchluessel, beschreibungsZeilen, ' +
-      'unterscheideEtiketten };',
+      'unterscheideEtiketten, effekte };',
     kontext
   );
   const website = kontext.__api;
@@ -635,6 +733,7 @@ if (!fs.existsSync(websitePfad)) {
     ['Beschreibungszeilen', (s) => [
       website.beschreibungsZeilen(s.item).join('|'), eigen.beschreibungsZeilen(s.item).join('|'),
     ]],
+    ['Effekte', (s) => [website.effekte(s.item).join('|'), eigen.effekte(s.item).join('|')]],
     ['Variantenname ohne Verzauberungen', (s) => [
       website.variantenLabel(s.item, { mitVerzauberungen: false }),
       eigen.variantenLabel(s.item, { mitVerzauberungen: false }),
