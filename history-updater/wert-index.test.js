@@ -394,6 +394,110 @@ pruefe('Die Tagesreihe lässt sich daraus nachbauen',
 pruefe('Auch ein einzelner Verkauf steht als Paar da',
   nurAlt.p.length === 2 && nurAlt.p[1] === 50, JSON.stringify(nurAlt.p));
 
+// ── 1f. Was als ein Item gilt ───────────────────────────────────────
+//
+// Gemeldet wurde der XP Talisman: zweimal in der Liste, beide Male als
+// "Jackpot". Es ist dasselbe Item — OPSucht hat Ende August "(Off-Hand)"
+// in den Effekttext geschrieben, und Exemplare, die schon in Kisten
+// lagen, behielten den alten. Minecraft backt die Lore in den
+// Gegenstand, also laufen beide Texte nebeneinander weiter.
+console.log('\n— Was als ein Item gilt —');
+
+const talisman = (effekt) => [
+  '',
+  'Verdiene mit diesem Talisman mehr',
+  'XP beim Farmen und Töten von Mobs!',
+  '',
+  `➥ Effekt: ${effekt}`,
+  '',
+  'Gewinntyp » Item',
+  'Seltenheit » Jackpot',
+];
+
+const talismanIndex = (...effekte) =>
+  eigen.baueIndex(
+    {
+      'XP Talisman': effekte.map((e, i) =>
+        verkauf({
+          preis: 15_000_000, zeit: vorTagen(2, 1 + i),
+          name: 'XP Talisman', material: 'GOLDEN_HORSE_ARMOR', lore: talisman(e),
+        })
+      ),
+    },
+    JETZT
+  ).index.items['XP Talisman'];
+
+const zusammen = talismanIndex('x1,5 XP', 'x1,5 XP (Off-Hand)', 'x1,5 XP');
+pruefe('Der Wirkungsort trennt keine Varianten mehr', zusammen.length === 1, `${zusammen.length}`);
+pruefe('Und alle Verkäufe stehen in dem einen Eintrag', zusammen[0]?.n === 3, `${zusammen[0]?.n}`);
+
+// Die Gegenprobe, und die ist die wichtigere: Die Regel darf nicht
+// alles in Klammern schlucken. "(3 Minuten)" gegen "(5 Minuten)" ist
+// ein echter Unterschied — wer den wegwirft, legt Items zusammen, die
+// verschieden viel wert sind.
+const getrennt = talismanIndex('x1,5 XP (3 Minuten)', 'x1,5 XP (5 Minuten)');
+pruefe('Eine Dauer in Klammern trennt weiterhin', getrennt.length === 2, `${getrennt.length}`);
+
+// Leerraum sagt nichts über den Gegenstand: Eine Zeile " " statt ""
+// trennte bisher zwei Varianten.
+const leerraum = eigen.baueIndex(
+  {
+    Propellerhut: [
+      verkauf({ preis: 80_000, zeit: vorTagen(2), name: 'Propellerhut', material: 'LEATHER_HELMET',
+        lore: ['', 'Betrachte die Welt mit', '', 'Seltenheit » Episch'] }),
+      verkauf({ preis: 90_000, zeit: vorTagen(1), name: 'Propellerhut', material: 'LEATHER_HELMET',
+        lore: [' ', 'Betrachte die Welt  mit', ' ', 'Seltenheit » Episch'] }),
+    ],
+  },
+  JETZT
+).index.items['Propellerhut'];
+pruefe('Leerzeilen und doppelter Leerraum trennen nicht', leerraum.length === 1, `${leerraum.length}`);
+
+// ── 1g. Gleich benannt heißt nicht gleich ───────────────────────────
+//
+// Der umgekehrte Fall, und der gefährlichere: Der Yamakuza Roller stand
+// zwölfmal da, jedes Mal als "Golden Horse Armor" — dahinter +60 % bis
+// +180 % Geschwindigkeit, mit Schnitten von 4,5 bis 155 Mio. Die
+// zusammenzulegen wäre falsch; sie gleich zu benennen war es auch.
+console.log('\n— Gleich benannt heißt nicht gleich —');
+
+const roller = (prozent) =>
+  eigen.baueIndex(
+    {
+      'Yamakuza Roller': prozent.map((p, i) =>
+        verkauf({
+          preis: p * 100_000, zeit: vorTagen(2, 1 + i),
+          name: 'Yamakuza Roller', material: 'GOLDEN_HORSE_ARMOR',
+          lore: ['', `➥ Effekt: +${p}% Geschwindigkeit (Hände, Kopf)`, '', 'Gewinntyp » Item'],
+        })
+      ),
+    },
+    JETZT
+  ).index.items['Yamakuza Roller'];
+
+const rollers = roller([60, 180]);
+pruefe('Verschiedene Effektstärken bleiben getrennt', rollers.length === 2, `${rollers.length}`);
+pruefe('Und heißen auch verschieden', rollers[0].v !== rollers[1].v,
+  rollers.map((r) => r.v).join('  ≠  '));
+pruefe('Die Effektstärke steht im Etikett',
+  rollers.some((r) => r.v.includes('+60%')) && rollers.some((r) => r.v.includes('+180%')),
+  rollers.map((r) => r.v).join(' | '));
+
+// Und die Gegenprobe zur Glättung: Der Wirkungsort fällt aus dem
+// **Schlüssel**, aber nicht aus dem Text. Angezeigt wird, was wirklich
+// auf dem Gegenstand steht; zusammengelegt wird nach dem geglätteten.
+//
+// (Im Etikett ist er bei diesem Beispiel trotzdem nicht zu sehen — der
+// Zusatz wird bei ZUSATZ_MAX abgeschnitten, damit die Zeile in Discords
+// Auswahlmenü passt. Das ist eine andere Grenze und eine andere Sorge.)
+const mitOrt = { lore: ['➥ Effekt: +60% Geschwindigkeit (Hände, Kopf)'] };
+pruefe('Der Text behält den Wirkungsort',
+  eigen.beschreibungsZeilen(mitOrt)[0] === '➥ Effekt: +60% Geschwindigkeit (Hände, Kopf)',
+  eigen.beschreibungsZeilen(mitOrt)[0]);
+pruefe('Der Schlüssel nicht',
+  eigen.loreSchluessel(mitOrt) === '➥ Effekt: +60% Geschwindigkeit',
+  eigen.loreSchluessel(mitOrt));
+
 // ── 2. Spielerbilanz ────────────────────────────────────────────────
 console.log('\n— Spielerbilanz —');
 
@@ -471,7 +575,8 @@ if (!fs.existsSync(websitePfad)) {
     block +
       '\nglobalThis.__api = { verlaufEntdoppeln, itemVariante, variantenLabel, ' +
       'salePricePerUnit, verzauberungsStempel, verzauberungenListe, ' +
-      'winsorisierterSchnitt };',
+      'winsorisierterSchnitt, loreSchluessel, beschreibungsZeilen, ' +
+      'unterscheideEtiketten };',
     kontext
   );
   const website = kontext.__api;
@@ -522,6 +627,14 @@ if (!fs.existsSync(websitePfad)) {
       website.verzauberungenListe(s.item).join('|'), eigen.verzauberungenListe(s.item).join('|'),
     ]],
     ['Variantenname', (s) => [website.variantenLabel(s.item), eigen.variantenLabel(s.item)]],
+    // Der geglättete Schlüssel entscheidet, was als ein Item gilt, die
+    // Beschreibungszeilen, wie zwei gleich benannte auseinandergehalten
+    // werden. Laufen sie auseinander, legt die Seite andere Auktionen
+    // zusammen als der Bot — und niemand merkt, welche der beiden stimmt.
+    ['Lore-Schlüssel', (s) => [website.loreSchluessel(s.item), eigen.loreSchluessel(s.item)]],
+    ['Beschreibungszeilen', (s) => [
+      website.beschreibungsZeilen(s.item).join('|'), eigen.beschreibungsZeilen(s.item).join('|'),
+    ]],
     ['Variantenname ohne Verzauberungen', (s) => [
       website.variantenLabel(s.item, { mitVerzauberungen: false }),
       eigen.variantenLabel(s.item, { mitVerzauberungen: false }),
