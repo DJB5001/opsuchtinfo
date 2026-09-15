@@ -141,6 +141,45 @@ der Bot eine laufende Auktion der richtigen Ausführung zuordnen — sonst
 vergleicht der Schnäppchen-Alarm eine schlicht verzauberte Spitzhacke mit
 dem Schnitt der gut verzauberten.
 
+### Die Lore wird vor dem Vergleich geglättet
+
+Der **XP Talisman** stand zweimal in der Liste, beide Male als
+„Jackpot". Es war dasselbe Item:
+
+```
+23x  "➥ Effekt: x1,5 XP"              seit 08.07.
+10x  "➥ Effekt: x1,5 XP (Off-Hand)"   seit 31.08.
+```
+
+OPSucht hat den Wirkungsort Ende August nachgetragen. Exemplare, die
+schon in Kisten lagen, behielten den alten Text — Minecraft backt die
+Lore in den Gegenstand, also laufen beide Fassungen weiter nebeneinander.
+Dass es dasselbe ist, sagten die Preise: Median 15 Mio bei beiden.
+
+`loreSchluessel()` glättet deshalb, was nichts über den Gegenstand
+aussagt: Leerzeilen, doppelten Leerraum (eine Zeile `" "` statt `""`
+trennte zwei Varianten) und den Wirkungsort in Klammern am Zeilenende.
+Die Liste dafür ist mit Absicht kurz — „(3 Minuten)" gegen
+„(5 Minuten)" ist ein echter Unterschied. Angezeigt wird weiter der
+volle Text; geglättet wird nur zum Vergleichen.
+
+### Und gleich benannt heißt nicht gleich
+
+Der umgekehrte Fall, und der gefährlichere: Der **Yamakuza Roller** stand
+zwölfmal da und hieß jedes Mal „Golden Horse Armor" — dahinter stecken
++60 % bis +180 % Geschwindigkeit, mit Schnitten von 4,5 bis 155 Mio. Wer
+dort kaufte, konnte nicht sehen, was er bekommt.
+
+Schuld war `beschreibungsZeilen()`: Es warf jede Zeile mit „: " weg, und
+genau so sehen die `➥ Effekt:`-Zeilen aus. Dem Etiketten-Unterscheider
+blieb nichts übrig. Jetzt überleben sie den Filter — „Gewinntyp »" und
+„Seltenheit »" bleiben draußen, die stehen schon im Etikett.
+
+Gemessen am echten Verlauf sinkt die Zahl der Einträge, die unter ihrem
+Namen ununterscheidbar bleiben, von **968 auf 403**. Null wird es nie:
+Manche Ausführungen trennt nur eine Spielersignatur oder ein doppelt
+geliefertes Textstück.
+
 ## Die Händlernamen
 
 Der Index kennt knapp siebentausend Händler, aber nur ihre UUIDs. Für die
