@@ -84,6 +84,41 @@ function loreAlsText(item) {
 }
 
 /**
+ * Wo ein Effekt wirkt — als Klammerzusatz am Zeilenende.
+ *
+ * OPSucht schreibt das mal dazu und mal nicht. Der XP Talisman hieß bis
+ * Ende August "➥ Effekt: x1,5 XP" und seitdem "… (Off-Hand)". Wer sein
+ * Exemplar vorher bekommen hat, trägt den alten Text weiter mit sich
+ * herum — Minecraft backt die Lore in den Gegenstand. Dadurch stand
+ * dasselbe Item zweimal in der Liste, beide Male als "Jackpot", beide
+ * Male mit einem Median von 15 Mio.
+ *
+ * Bewusst eine kurze Liste und nicht "alles in Klammern am
+ * Zeilenende": "(3 Minuten)" gegen "(5 Minuten)" ist ein echter
+ * Unterschied, den man nicht wegwerfen darf. Der Wirkungsort ist
+ * dagegen zweimal dieselbe Aussage.
+ */
+const WIRKUNGSORT = /\s*\((?:Off-Hand|Off Hand|Hand|Hände|Haende|Kopf|Inventar)[^()]*\)$/i;
+
+/**
+ * Die Lore, wie sie den Variantenschlüssel bestimmt.
+ *
+ * Geglättet wird nur, was nichts über den Gegenstand aussagt:
+ * Leerzeilen, doppelter Leerraum — eine Zeile " " statt "" trennte
+ * bisher zwei Varianten — und der Wirkungsort oben.
+ *
+ * loreAlsText() bleibt daneben unverändert: Angezeigt wird weiter der
+ * echte Text samt "(Off-Hand)". Geglättet wird nur zum Vergleichen.
+ */
+function loreSchluessel(item) {
+  return loreAlsText(item)
+    .split('\n')
+    .map((z) => z.trim().replace(/\s+/g, ' ').replace(WIRKUNGSORT, ''))
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
  * Verzauberungen als sortierte Kette, z.B. "efficiency=5,mending=1".
  *
  * Sortiert, weil die Reihenfolge im JSON nicht verlässlich ist — sonst
@@ -112,7 +147,7 @@ function verzauberungsStempel(item) {
  * 1.275.
  */
 function itemVariante(item) {
-  return `${item?.material ?? ''}\u0000${loreAlsText(item)}\u0000${verzauberungsStempel(item)}`;
+  return `${item?.material ?? ''}\u0000${loreSchluessel(item)}\u0000${verzauberungsStempel(item)}`;
 }
 
 function materialLesbar(material) {
@@ -341,7 +376,14 @@ function beschreibungsZeilen(item) {
   return loreAlsText(item)
     .split('\n')
     .map((z) => z.trim())
-    .filter((z) => z && !/[»:]\s/.test(z) && !/^[─—\-_=]+$/.test(z));
+    .filter((z) => z && !/^[─—\-_=]+$/.test(z))
+    // "➥ Effekt: +180% Geschwindigkeit" trägt einen Doppelpunkt und flog
+    // damit heraus — ausgerechnet die Zeile, die den Yamakuza Roller mit
+    // +60 % von dem mit +180 % unterscheidet. Zwölf Einträge hießen
+    // deshalb alle "Golden Horse Armor", bei Schnitten von 4,5 bis 155
+    // Mio. "Gewinntyp »" und "Seltenheit »" bleiben draußen: Die stehen
+    // schon im Etikett.
+    .filter((z) => /^➥/.test(z) || !/[»:]\s/.test(z));
 }
 
 /** Höchstens so lang wird ein Zusatz — Discord nimmt 100 Zeichen im Ganzen. */
@@ -582,6 +624,10 @@ module.exports = {
   baueIndex,
   // Für den Test und für alle, die die Logik gegen die Website halten wollen.
   salePricePerUnit,
+  // Was als eine Variante gilt, und was zwei gleich benannte trennt.
+  // Beides steht ebenso in der Website; wert-index.test.js vergleicht sie.
+  loreSchluessel,
+  beschreibungsZeilen,
   // Die Formel, die Bot und Website denselben Preis nennen lässt.
   // wert-index.test.js haelt sie gegen die der Website.
   winsorisierterSchnitt,
