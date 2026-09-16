@@ -89,6 +89,45 @@ das Ergebnis Funktion für Funktion. Weichen sie ab, nennt der Bot andere
 Durchschnitte als die Website — zwei Quellen, die sich widersprechen,
 sind schlimmer als eine.
 
+### Der Schlüssel, den die Mod nachrechnet
+
+Je Variante steht ein `k` darin, zwölf Hexziffern. Das ist der
+Variantenschlüssel selbst — SHA-1 über `material`, die geglättete Lore
+und die Verzauberungen, also genau das, wonach oben gruppiert wird —,
+gekürzt.
+
+Er steht da für die Fabric-Mod im Repo `opsucht-itemwert`: Die sieht im
+Inventar einen Gegenstand und muss die passende Zeile hier finden. Über
+den Namen allein geht das nicht. Am echten Verlauf gemessen:
+
+| Schlüssel | eindeutige Varianten | abgedeckte Verkäufe |
+|---|---|---|
+| Nur der Name | 77,9 % | 41,6 % |
+| + Material | 81,4 % | 46,0 % |
+| + Verzauberungen | 90,0 % | 61,9 % |
+| + Lore | 99,4 % | 97,8 % |
+
+Ohne die Lore fällt das „Boosterpack Bundle" in einen Topf, dessen
+Enden um Faktor 34.570 auseinanderliegen. Also muss sie in den
+Schlüssel — und zwar als Prüfwert, nicht im Klartext: Die Lore steht
+schon in der Beschreibung, ein zweites Mal wären es rund 1 MB bei einer
+Datei, die alle 15 Minuten committet wird. So sind es 67 KB, unter 2 %.
+
+Zwölf Ziffern reichen, weil immer erst über den Namen nachgeschlagen
+wird und unter einem Namen höchstens ein paar Dutzend Ausführungen
+stehen. Über alle 5.579 Einträge gemessen: keine einzige Kollision.
+
+SHA-1 und nichts Eigenes, damit die Gegenseite ohne Bibliothek
+mitkommt — `MessageDigest.getInstance("SHA-1")` gibt es in jeder JVM.
+Gerechnet wird über die UTF-8-Bytes, in denen das Trennzeichen `\u0000`
+in beiden Sprachen dasselbe einzelne Null-Byte ist. Nachgemessen: Über
+alle 4.684 Varianten des echten Verlaufs kommen Node und Java auf
+denselben Schlüssel, 4.684 von 4.684.
+
+> Wer die Formel anfasst, bricht die Mod — und zwar lautlos, denn ein
+> Schlüssel, den es nicht gibt, sieht aus wie ein Item ohne Daten.
+> `wert-index.test.js` nagelt deshalb einen Wert fest.
+
 ### Ausreißer zählen nicht voll mit
 
 Einzelne viel zu teure Verkäufe verschoben den Schnitt so stark, dass er
