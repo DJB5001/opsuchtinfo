@@ -72,6 +72,8 @@ const MAX_EINZELVERKAEUFE = 1000;
 
 // ── Aus DNV-Website/js/script.js ─────────────────────────────────────
 
+const crypto = require('node:crypto');
+
 function salePricePerUnit(sale) {
   const price = sale.finalPrice ?? sale.currentBid ?? sale.startBid ?? 0;
   return price / (sale.item?.amount || 1);
@@ -159,6 +161,30 @@ function verzauberungsStempel(item) {
  */
 function itemVariante(item) {
   return `${item?.material ?? ''}\u0000${loreSchluessel(item)}\u0000${verzauberungsStempel(item)}`;
+}
+
+/**
+ * Derselbe Schlüssel, kurz genug für die Datei.
+ *
+ * Wozu: Die Fabric-Mod sieht im Inventar einen Gegenstand und muss ihn
+ * der richtigen Zeile im Index zuordnen. Über den Namen allein geht das
+ * nicht — gemessen sind damit nur 41,6 % der Verkäufe eindeutig, mit
+ * Material und Verzauberungen 61,9 %. Das "Boosterpack Bundle" fiele um
+ * Faktor 34.570 falsch zusammen.
+ *
+ * Also wandert der Variantenschlüssel selbst mit. Nicht im Klartext: Die
+ * Lore steht schon in beschreibung und wäre hier ein zweites Mal rund
+ * 1 MB — bei einer Datei, die alle 15 Minuten committet wird. Zwölf
+ * Hexziffern reichen: Nachgeschlagen wird immer erst über den Namen, und
+ * unter einem Namen stehen höchstens ein paar Dutzend Ausführungen.
+ *
+ * SHA-1 und nicht etwas Eigenes, damit die Gegenseite ihn ohne
+ * Bibliothek nachbauen kann — MessageDigest.getInstance("SHA-1") gibt
+ * es in jeder JVM. Über die UTF-8-Bytes, in denen \u0000 in beiden
+ * Sprachen dasselbe eine Null-Byte ist.
+ */
+function variantenSchluessel(variante) {
+  return crypto.createHash('sha1').update(variante, 'utf8').digest('hex').slice(0, 12);
 }
 
 function materialLesbar(material) {
@@ -548,6 +574,8 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
       const schluessel = itemVariante(verkauf.item);
       if (!nachVariante.has(schluessel)) {
         nachVariante.set(schluessel, {
+          // Der Variantenschlüssel selbst, für die Zeile k weiter unten.
+          schluessel,
           m: verkauf.item?.material ?? '',
           v: variantenLabel(verkauf.item),
           // Der Verzauberungsstempel wandert mit in die Datei. Nur damit
@@ -626,6 +654,10 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
         m: e.m,
         v: e.v,
         e: e.e,
+        // Damit die Mod im Spiel dieselbe Zeile findet, siehe
+        // variantenSchluessel(). Steht vor den Zahlen, weil es zum
+        // Erkennen gehört und nicht zum Auswerten.
+        k: variantenSchluessel(e.schluessel),
         // Die Anzahl zählt weiter jeden Verkauf. Winsorisieren wirft
         // nichts weg, es begrenzt nur, wie weit ein einzelner Preis
         // den Schnitt ziehen darf — n und die Spanne bleiben deshalb
@@ -688,6 +720,8 @@ module.exports = {
   winsorisierterSchnitt,
   verzauberungsStempel,
   itemVariante,
+  // Was die Fabric-Mod aus einem Gegenstand im Inventar nachrechnet.
+  variantenSchluessel,
   verzauberungenListe,
   variantenLabel,
   verkaufsZeit,

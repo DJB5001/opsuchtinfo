@@ -596,6 +596,98 @@ const verschiedeneHand = signiert(
 pruefe('Verschiedene Signierende bleiben getrennt', verschiedeneHand.length === 2,
   `${verschiedeneHand.length}`);
 
+// ── 1j. Der Schlüssel, den die Mod nachrechnet ──────────────────────
+//
+// Die Fabric-Mod sieht im Inventar einen Gegenstand und muss die
+// passende Zeile im Index finden. Über den Namen allein geht das nicht:
+// Gemessen am echten Verlauf sind damit nur 41,6 % der Verkäufe
+// eindeutig, mit Material und Verzauberungen 61,9 %. Erst die Lore bringt
+// 97,8 % — das "Boosterpack Bundle" fiele sonst um Faktor 34.570 falsch
+// zusammen.
+//
+// Also schreibt der Index den Variantenschlüssel mit, gekürzt auf zwölf
+// Hexziffern. Was hier geprüft wird, ist der Vertrag mit der anderen
+// Sprache: Ändert sich die Formel, findet die Mod schlagartig gar nichts
+// mehr — und zwar lautlos, weil ein Schlüssel, den es nicht gibt, sich
+// nicht von einem Item ohne Daten unterscheiden lässt.
+console.log('\n— Der Schlüssel für die Mod —');
+
+const schluesselIndex = eigen.baueIndex(
+  {
+    Jetpack: [
+      verkauf({
+        preis: 100_000_000, zeit: vorTagen(2),
+        name: 'Jetpack', material: 'GOLDEN_HORSE_ARMOR',
+        lore: ['', 'Fliege mit diesem', '➥ Effekt: Fliegen (Off-Hand)', '', 'Seltenheit » Jackpot'],
+      }),
+    ],
+  },
+  JETZT
+).index.items.Jetpack;
+
+pruefe('Jeder Eintrag trägt einen Schlüssel',
+  /^[0-9a-f]{12}$/.test(schluesselIndex[0].k ?? ''), `${schluesselIndex[0].k}`);
+
+// Der festgenagelte Wert. Er steht hier nicht zur Zierde: Nur an ihm
+// merkt jemand, der die Formel anfasst, dass draußen eine zweite
+// Umsetzung davon abhängt. Derselbe Wert steht in der Mod im Test.
+const JETPACK_SCHLUESSEL = eigen.variantenSchluessel(
+  eigen.itemVariante({
+    material: 'GOLDEN_HORSE_ARMOR',
+    lore: ['', 'Fliege mit diesem', '➥ Effekt: Fliegen (Off-Hand)', '', 'Seltenheit » Jackpot'],
+  })
+);
+pruefe('Die Formel ist SHA-1 über Material, Lore und Verzauberungen',
+  schluesselIndex[0].k === JETPACK_SCHLUESSEL,
+  `${schluesselIndex[0].k} gegen ${JETPACK_SCHLUESSEL}`);
+pruefe('Und sie ist festgenagelt, damit die Mod nicht lautlos ausfällt',
+  JETPACK_SCHLUESSEL === '9b062c05832c', JETPACK_SCHLUESSEL);
+
+// Was den Schlüssel trennt, trennt auch die Zeile — und umgekehrt. Die
+// Mod liest dieselbe Lore aus dem Gegenstand, also müssen beide Seiten
+// bei denselben Dingen zusammenlegen.
+const zweiRoller = eigen.baueIndex(
+  {
+    'Yamakuza Roller': [60, 180].map((p, i) =>
+      verkauf({
+        preis: (i + 1) * 5_000_000, zeit: vorTagen(2, 1 + i),
+        name: 'Yamakuza Roller', material: 'GOLDEN_HORSE_ARMOR',
+        lore: ['', `➥ Effekt: +${p}% Geschwindigkeit (Hände, Kopf)`],
+      })
+    ),
+  },
+  JETZT
+).index.items['Yamakuza Roller'];
+pruefe('Verschiedene Stärke, verschiedene Schlüssel',
+  zweiRoller.length === 2 && zweiRoller[0].k !== zweiRoller[1].k,
+  zweiRoller.map((e) => `${e.v}=${e.k}`).join(' | '));
+
+// Der Wirkungsort und das Signaturdatum fallen aus dem Schlüssel — sonst
+// bekäme ein altes Exemplar im Inventar einen anderen Schlüssel als das
+// neue und stünde ohne Preis da.
+pruefe('Der Wirkungsort ändert den Schlüssel nicht',
+  eigen.variantenSchluessel(eigen.itemVariante({ material: 'X', lore: ['➥ Effekt: x1,5 XP'] })) ===
+    eigen.variantenSchluessel(eigen.itemVariante({ material: 'X', lore: ['➥ Effekt: x1,5 XP (Off-Hand)'] })));
+pruefe('Das Signaturdatum auch nicht',
+  eigen.variantenSchluessel(eigen.itemVariante({ material: 'X', lore: ['Signiert von scusy am 09.07.2026'] })) ===
+    eigen.variantenSchluessel(eigen.itemVariante({ material: 'X', lore: ['Signiert von scusy am 11.07.2026'] })));
+pruefe('Der Signierende dagegen schon',
+  eigen.variantenSchluessel(eigen.itemVariante({ material: 'X', lore: ['Signiert von scusy am 09.07.2026'] })) !==
+    eigen.variantenSchluessel(eigen.itemVariante({ material: 'X', lore: ['Signiert von emsi am 09.07.2026'] })));
+
+// Verzauberungen gehen in derselben Reihenfolge rein, egal wie die API
+// sie schickt — sonst bekäme dasselbe Schwert je nach Laune zwei
+// Schlüssel und die Mod fände es mal so und mal nicht.
+pruefe('Die Reihenfolge der Verzauberungen ist egal',
+  eigen.variantenSchluessel(eigen.itemVariante({
+    material: 'NETHERITE_SWORD', lore: [],
+    enchantments: { 'minecraft:mending': 1, 'minecraft:sharpness': 5 },
+  })) ===
+  eigen.variantenSchluessel(eigen.itemVariante({
+    material: 'NETHERITE_SWORD', lore: [],
+    enchantments: { 'minecraft:sharpness': 5, 'minecraft:mending': 1 },
+  })));
+
 // ── 2. Spielerbilanz ────────────────────────────────────────────────
 console.log('\n— Spielerbilanz —');
 
