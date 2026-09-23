@@ -36,10 +36,16 @@ jobs:
           #   an          Der Strom archiviert mit.
           #   aus         Kein Strom.
           #
-          # Nach einem Blick in ein Protokoll hier auf `an` stellen.
-          # Worauf dabei zu achten ist, steht in der README unter
-          # „Der Ereignisstrom".
-          STROM: beobachten
+          # Steht seit dem 23.09.2026 auf `an`. Der Beobachten-Lauf
+          # #22145 hat gezeigt, dass der Strom hält, was er verspricht:
+          # 23 Ereignisse, genau die Lücke seit dem letzten Lauf, zwei
+          # Verkäufe, die der Vergleich gar nicht gesehen hätte, und
+          # nichts Verworfenes.
+          #
+          # Zurück auf `beobachten` oder `aus`, falls sich der Strom
+          # anders verhält als gedacht — der Vergleich läuft in jedem
+          # Fall mit, die Zahlen wären dann nur wieder die alten.
+          STROM: an
         run: |
           node history-updater/update-history.js
           node history-updater/update-shards.js
