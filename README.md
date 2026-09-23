@@ -22,10 +22,88 @@ weggeworfen — ohne Fehlermeldung, ohne Spur.
 
 ## Wie ein Verkauf erkannt wird
 
-Die API sagt nur, was gerade läuft. Der Updater merkt sich diesen Stand
-und vergleicht ihn beim nächsten Lauf: Was verschwunden ist und ein
-echtes Gebot hatte, gilt als verkauft. Was ohne Gebot verschwindet, wurde
-zurückgezogen und zählt nicht.
+Auf zwei Wegen, seit dem 23.09.2026.
+
+**Der Vergleich.** Der ältere Weg, und er läuft unverändert weiter:
+`/active` sagt nur, was gerade läuft. Der Updater merkt sich diesen
+Stand und vergleicht ihn beim nächsten Lauf. Was verschwunden ist und
+ein echtes Gebot hatte, gilt als verkauft. Was ohne Gebot verschwindet,
+wurde zurückgezogen und zählt nicht.
+
+**Der Ereignisstrom.** Neu, und in drei Punkten genauer — siehe unten.
+
+### Der Ereignisstrom
+
+`api.opsucht.net/auctions/stream` schickt jede Änderung sofort, als
+Server-Sent Events. Der Unterschied ist nicht die Geschwindigkeit — ein
+Cron-Job alle 15 Minuten bleibt ein Cron-Job alle 15 Minuten. Der
+Unterschied ist, dass der Vergleich aus zwei Momentaufnahmen
+**schließt**, was passiert ist, und der Strom es **sagt**:
+
+| | Vergleich | Strom |
+|---|---|---|
+| Auktion eingestellt *und* verkauft zwischen zwei Läufen | hat es nie gegeben | wird gemeldet |
+| Endpreis | letztes gesehenes Gebot | der echte |
+| verkauft oder zurückgezogen? | aus den Geboten geraten | steht in der Ereignisart |
+
+Zeile eins trifft vor allem Sofortkäufe — die gehen oft in Minuten. Zeile
+zwei trifft jede Auktion, auf die in den letzten 15 Minuten noch geboten
+wurde, also die spannenden. Zeile drei archivierte zurückgezogene
+Auktionen als Verkäufe.
+
+**Wie ein Cron-Job an einem endlosen Strom hängt: gar nicht.** Der Lauf
+verbindet sich, sagt mit `Last-Event-ID`, wo er zuletzt aufgehört hat,
+nimmt den Rückstand entgegen und legt wieder auf — nach acht Sekunden
+Stille oder spätestens nach einer Minute. Der Anschlusspunkt steht als
+`stromKennung` in `history-updater/state.json`. Kann der Server nicht
+mehr anknüpfen, schickt er `stream.reset`; dann fehlt der Rückstand, und
+der Vergleich fängt ihn auf.
+
+**Beide laufen, immer.** Der Strom ist zuerst dran, damit bei einem
+Verkauf, den beide sehen, die genauere Fassung im Verlauf landet — die
+zweite prallt an der Dublettenprüfung ab. Fällt der Strom aus, arbeitet
+der Vergleich allein, so wie seit Monaten. Das ist der Grund, warum der
+Strom nirgends abgesichert werden muss: Er kann nichts kaputtmachen, was
+ohne ihn ginge.
+
+#### Der Schalter
+
+`STROM` in `.github/workflows/update-history.yml`:
+
+| Wert | Was passiert |
+|---|---|
+| `beobachten` | **Vorgabe.** Der Strom läuft und rechnet, schreibt aber nichts. |
+| `an` | Der Strom archiviert mit. |
+| `aus` | Kein Strom. |
+
+Die Vorgabe ist Absicht. Dieser Code ist gegen eine Ankündigung
+geschrieben, nicht gegen die laufende API — welche Felder ein Ereignis
+wirklich trägt, stellt sich erst im Betrieb heraus. Am `auction-history.json`
+hängen `/wert`, die Website und die Fabric-Mod; etwas Falsches
+hineinzuschreiben wäre der teuerste Fehler in diesem Repo.
+
+Jeder Lauf endet deshalb mit einer Zeile wie:
+
+```
+Strom [beobachten]: 143 Ereignisse in 8 s, 27 Verkäufe erkannt.
+Davon 19 auch im Vergleich (Preis abweichend bei 6), 8 nur im Strom,
+2 nur im Vergleich. Geschrieben wurde nichts davon (STROM=beobachten).
+```
+
+Worauf dabei zu achten ist:
+
+- **„nur im Strom"** ist der Gewinn: Verkäufe, die der Vergleich gar
+  nicht gesehen hat.
+- **„Preis abweichend"** sind die, bei denen der Vergleich zu wenig
+  meldet. Ein paar Beispiele stehen dahinter.
+- **„nur im Vergleich"** ist die Zahl, auf die es ankommt. Klein ist
+  normal — der Rückstand reicht nicht beliebig weit zurück. Groß heißt:
+  Der Strom liefert nicht, was er soll, und `an` wäre verfrüht.
+- **„Verworfen"** zählt, was nicht wie ein Verkauf aussah. Steht da viel,
+  hat das Ereignis eine andere Form als angenommen, und `strom.js`
+  gehört angepasst, bevor der Schalter umgelegt wird.
+
+Ist die Zeile plausibel, `STROM: an` im Workflow setzen.
 
 ## Der Wert-Index
 
@@ -284,7 +362,15 @@ für Schlüssel, die schon da sind.
 ```bash
 node history-updater/wert-index.test.js   # Index, und Abgleich mit der Website
 node history-updater/namen.test.js        # Namensauflösung, ohne Netz
+node history-updater/strom.test.js        # Ereignisstrom, ohne Netz (~40 s)
 ```
+
+`strom.test.js` prüft zweierlei: `strom.js` für sich, und — das ist der
+Punkt — den **echten** `update-history.js` in einem Sandkasten mit
+gefälschtem Auktionshaus davor. Nur so ist zu sehen, was tatsächlich im
+Verlauf landet: dass ein Verkauf aus dem Strom ankommt, dass der
+Vergleich ihn nicht ein zweites Mal archiviert, und dass `beobachten`
+wirklich nichts schreibt.
 
 Der Abgleich mit der Website läuft nur, wenn `DNV-Website` daneben
 ausgecheckt ist; sonst überspringt er sich mit Hinweis.

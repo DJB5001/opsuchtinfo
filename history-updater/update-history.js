@@ -29,7 +29,44 @@ const STATE_FILE = path.join(__dirname, 'state.json');
 // was drinsteht, erklärt wert-index.js.
 const { baueIndex } = require('./wert-index.js');
 const { ergaenzeNamen } = require('./namen.js');
+const { holeRueckstand } = require('./strom.js');
 const INDEX_FILE = path.join(__dirname, '..', 'wert-index.json');
+
+// =====================================================================
+// Der Ereignisstrom (seit 23.09.2026)
+// =====================================================================
+//
+// Was er besser kann als der Vergleich unten und warum, steht in
+// strom.js. Kurz: Der Vergleich *schließt* aus zwei Momentaufnahmen,
+// was passiert ist; der Strom *sagt* es. Drei Dinge werden damit
+// richtig, die bisher geraten waren — schnelle Verkäufe, der Endpreis,
+// und ob überhaupt verkauft wurde.
+//
+// Beide laufen. Immer. Der Strom kommt vor dem Vergleich dran, damit
+// bei einem Verkauf, den beide sehen, die genauere Fassung im Verlauf
+// landet — die zweite prallt an der Dublettenprüfung ab. Fällt der
+// Strom aus, macht der Vergleich die Arbeit allein, so wie seit
+// Monaten.
+//
+// ── Der Schalter ────────────────────────────────────────────────────
+//
+//   STROM=beobachten  (Vorgabe) Der Strom läuft und rechnet, schreibt
+//                     aber nichts. Der Lauf berichtet, was er
+//                     archiviert *hätte* und wie es sich zum Vergleich
+//                     verhält.
+//   STROM=an          Der Strom archiviert.
+//   STROM=aus         Kein Strom.
+//
+// Die Vorgabe ist Absicht und keine Zaghaftigkeit. Dieser Code ist
+// gegen eine Ankündigung geschrieben, nicht gegen die laufende API;
+// welche Felder ein Ereignis wirklich trägt, stellt sich erst hier
+// heraus. Am anderen Ende hängt auction-history.json — 90 Tage
+// Verkäufe, aus denen /wert, die Website und die Mod ihre Zahlen
+// nehmen. Ein Blick in das Protokoll eines Laufs kostet eine Minute
+// und sagt, ob der Strom liefert, was er soll. Danach auf `an`.
+const STROM_MODI = ['beobachten', 'an', 'aus'];
+const STROM_MODUS_ROH = (process.env.STROM ?? 'beobachten').trim().toLowerCase();
+const STROM_MODUS = STROM_MODI.includes(STROM_MODUS_ROH) ? STROM_MODUS_ROH : 'beobachten';
 
 // Wie viele Verkäufe pro Item maximal behalten werden (verhindert, dass
 // die Datei unendlich wächst). Bei Bedarf höher stellen.
@@ -77,8 +114,53 @@ function deriveWinner(a) {
   return { highestBidder, finalPrice };
 }
 
+/**
+ * Einen Verkauf in den Verlauf legen. Rückgabe: ob er neu war.
+ *
+ * Die Dublettenprüfung ist die Stelle, an der Strom und Vergleich sich
+ * nicht ins Gehege kommen: Beide sehen denselben Verkauf, aber nur der
+ * erste landet — und das ist der Strom, weil er vorher dran ist.
+ */
+function archiviere(history, name, sale) {
+  if (!history[name]) history[name] = [];
+  if (history[name].some((s) => s.id === sale.id)) return false;
+
+  history[name].push(sale);
+  if (history[name].length > MAX_SALES_PER_ITEM) {
+    history[name] = history[name].slice(-MAX_SALES_PER_ITEM);
+  }
+  return true;
+}
+
 async function main() {
-  // 1) Aktuelle aktive Auktionen holen
+  // 1) Vorherigen Zustand laden — vor allem anderen, weil im Zustand
+  //    steht, wo der Strom beim letzten Mal aufgehört hat.
+  const prevState = readJson(STATE_FILE, { auctions: {} });
+  const prevAuctions = prevState.auctions || {};
+
+  // 2) Verlauf laden
+  const history = readJson(HISTORY_FILE, {});
+
+  // 3) Der Ereignisstrom: was seit dem letzten Lauf wirklich passiert ist
+  let strom = null;
+  if (STROM_MODUS !== 'aus') {
+    strom = await holeRueckstand({
+      kennung: prevState.stromKennung,
+      schluesselVon: auctionKey,
+    });
+  }
+
+  let ausStrom = 0;
+  const stromIds = new Set();
+  const stromPreise = new Map(); // id -> Endpreis, für den Abgleich unten
+  for (const sale of strom?.verkaeufe ?? []) {
+    stromIds.add(sale.id);
+    stromPreise.set(sale.id, sale.finalPrice);
+    if (STROM_MODUS !== 'an') continue; // beobachten: rechnen, nicht schreiben
+    if (archiviere(history, itemNameOf(sale), sale)) ausStrom += 1;
+  }
+
+  // 4) Aktuelle aktive Auktionen holen
   let active;
   try {
     const res = await fetch(API_URL, { headers: { 'User-Agent': 'opsucht-history-updater' } });
@@ -86,26 +168,24 @@ async function main() {
     active = await res.json();
   } catch (e) {
     console.error('Konnte aktive Auktionen nicht laden:', e.message);
-    process.exit(0); // Kein harter Fehler -> nächster Lauf versucht es erneut
+    // Was der Strom gebracht hat, ist deshalb nicht weniger wert —
+    // und der Anschlusspunkt darf nicht verloren gehen, sonst fehlt
+    // beim nächsten Lauf genau dieser Abschnitt.
+    return beendeOhneVergleich(history, prevState, strom, ausStrom);
   }
   if (!Array.isArray(active)) {
     console.error('Unerwartetes API-Format, breche ab.');
-    process.exit(0);
+    return beendeOhneVergleich(history, prevState, strom, ausStrom);
   }
 
   // Map: key -> Auktion (aktueller Zustand)
   const activeMap = {};
   for (const a of active) activeMap[auctionKey(a)] = a;
 
-  // 2) Vorherigen Zustand laden
-  const prevState = readJson(STATE_FILE, { auctions: {} });
-  const prevAuctions = prevState.auctions || {};
-
-  // 3) Verlauf laden
-  const history = readJson(HISTORY_FILE, {});
-
   const now = Date.now();
   let newlyArchived = 0;
+  const vergleichsIds = new Set();
+  const vergleichsPreise = new Map();
 
   // 4) Verkaufte/beendete Auktionen finden: war vorher da, ist jetzt weg.
   //    Drei Fälle, wenn eine Auktion aus der Liste verschwindet:
@@ -164,22 +244,21 @@ async function main() {
       item: prevAuction.item
     };
 
-    const name = itemNameOf(prevAuction);
-    if (!history[name]) history[name] = [];
+    vergleichsIds.add(sale.id);
+    vergleichsPreise.set(sale.id, soldPrice);
 
-    // Duplikate vermeiden (gleiche id nicht doppelt archivieren)
-    if (!history[name].some(s => s.id === sale.id)) {
-      history[name].push(sale);
-      newlyArchived++;
-      // Auf Maximalgröße kürzen (älteste zuerst raus)
-      if (history[name].length > MAX_SALES_PER_ITEM) {
-        history[name] = history[name].slice(-MAX_SALES_PER_ITEM);
-      }
-    }
+    if (archiviere(history, itemNameOf(prevAuction), sale)) newlyArchived++;
   }
 
-  // 5) Neuen Zustand speichern (nur die Felder, die wir zum Archivieren brauchen)
-  const newState = { updatedAt: new Date().toISOString(), auctions: {} };
+  // 5) Neuen Zustand speichern (nur die Felder, die wir zum Archivieren
+  //    brauchen). `stromKennung` ist der Anschlusspunkt für den nächsten
+  //    Lauf — geht sie verloren, fängt der Strom von vorn an, und alles,
+  //    was seit diesem Lauf passiert ist, kommt nie an.
+  const newState = {
+    updatedAt: new Date().toISOString(),
+    stromKennung: strom?.kennung ?? prevState.stromKennung ?? null,
+    auctions: {},
+  };
   for (const [key, a] of Object.entries(activeMap)) {
     newState.auctions[key] = {
       seller: a.seller,
@@ -252,8 +331,90 @@ async function main() {
   }
 
   console.log(
-    `Fertig. Aktive Auktionen: ${active.length}, neu archiviert: ${newlyArchived}, ` +
+    `Fertig. Aktive Auktionen: ${active.length}, neu archiviert: ${newlyArchived + ausStrom}` +
+      `${ausStrom ? ` (davon ${ausStrom} aus dem Strom)` : ''}, ` +
       `alte entfernt (>${MAX_AGE_DAYS}d): ${removedOld}.${indexZeile}`
+  );
+  console.log(stromBericht(strom, { stromIds, stromPreise, vergleichsIds, vergleichsPreise }));
+}
+
+/**
+ * Was der Strom gebracht hat — und wie er sich zum Vergleich verhält.
+ *
+ * Das ist der Zweck des Beobachten-Modus und die Grundlage für die
+ * Entscheidung, ob `STROM=an` gesetzt werden kann. Drei Zahlen zählen:
+ *
+ *  - **„nur der Strom"**: Verkäufe, die der Vergleich gar nicht gesehen
+ *    hat. Das ist der Gewinn — überwiegend schnelle Sofortkäufe.
+ *  - **„anderer Preis"**: Verkäufe, die beide kennen, mit
+ *    unterschiedlichem Endpreis. Der Strom hat recht; der Vergleich
+ *    rechnet mit dem letzten Gebot, das er gesehen hat.
+ *  - **„nur der Vergleich"**: Verkäufe, die der Strom nicht gemeldet
+ *    hat. Eine kleine Zahl ist normal (der Rückstand reicht nicht
+ *    beliebig weit zurück). Eine große heißt: Der Strom liefert nicht,
+ *    was er soll — dann wäre `an` verfrüht. Schlimm ist es nie, denn
+ *    der Vergleich läuft in jedem Fall mit.
+ */
+function stromBericht(strom, { stromIds, stromPreise, vergleichsIds, vergleichsPreise }) {
+  if (!strom) return `Strom: ${STROM_MODUS === 'aus' ? 'abgeschaltet' : 'nicht gelaufen'}.`;
+  if (strom.fehler) return `Strom: nicht erreichbar (${strom.fehler}) — der Vergleich hat allein gearbeitet.`;
+
+  const beide = [...stromIds].filter((id) => vergleichsIds.has(id));
+  const abweichend = beide.filter((id) => Number(stromPreise.get(id)) !== Number(vergleichsPreise.get(id)));
+  const nurStrom = [...stromIds].filter((id) => !vergleichsIds.has(id)).length;
+  const nurVergleich = [...vergleichsIds].filter((id) => !stromIds.has(id)).length;
+
+  const verworfen = Object.entries(strom.verworfen ?? {});
+  const teile = [
+    `Strom [${STROM_MODUS}]: ${strom.ereignisse} Ereignisse in ${Math.round(strom.dauerMs / 1000)} s,`,
+    `${stromIds.size} Verkäufe erkannt.`,
+    `Davon ${beide.length} auch im Vergleich`,
+    `(Preis abweichend bei ${abweichend.length}),`,
+    `${nurStrom} nur im Strom,`,
+    `${nurVergleich} nur im Vergleich.`,
+  ];
+  if (verworfen.length) {
+    teile.push(`Verworfen: ${verworfen.map(([g, n]) => `${n}× ${g}`).join(', ')}.`);
+  }
+  if (strom.zurueckgesetzt) {
+    teile.push('Der Server hat um Neuabgleich gebeten — der Rückstand fehlt, der Vergleich fängt ihn auf.');
+  }
+  if (STROM_MODUS === 'beobachten') {
+    teile.push('Geschrieben wurde nichts davon (STROM=beobachten).');
+  }
+
+  // Ein paar Beispiele, wo die Preise auseinandergehen. Ohne sie ist
+  // „abweichend bei 7" eine Zahl, mit ihnen eine Aussage.
+  const beispiele = abweichend.slice(0, 3)
+    .map((id) => `${id}: Strom ${stromPreise.get(id)} / Vergleich ${vergleichsPreise.get(id)}`);
+  if (beispiele.length) teile.push(`Beispiele: ${beispiele.join(' | ')}.`);
+
+  return teile.join(' ');
+}
+
+/**
+ * Notausgang: Das Auktionshaus antwortet nicht.
+ *
+ * Bisher endete der Lauf hier ohne zu schreiben, und das war richtig —
+ * ohne /active gibt es nichts zu vergleichen. Jetzt kann der Strom
+ * trotzdem etwas gebracht haben, und vor allem steckt in ihm der
+ * Anschlusspunkt für den nächsten Lauf. Ginge der verloren, fehlte beim
+ * nächsten Mal genau der Abschnitt dazwischen.
+ *
+ * Der Index wird hier bewusst nicht neu gebaut: Dafür ist ein Lauf
+ * ohne Vergleich kein Anlass, und der alte Index ist nicht falsch,
+ * nur ein paar Minuten alt.
+ */
+function beendeOhneVergleich(history, prevState, strom, ausStrom) {
+  if (ausStrom > 0) writeJson(HISTORY_FILE, history);
+  writeJson(STATE_FILE, {
+    ...prevState,
+    updatedAt: new Date().toISOString(),
+    stromKennung: strom?.kennung ?? prevState.stromKennung ?? null,
+  });
+  console.log(
+    `Ohne Vergleich beendet. Aus dem Strom archiviert: ${ausStrom}. ` +
+      `Der gemerkte Stand bleibt, der nächste Lauf vergleicht gegen ihn.`
   );
 }
 

@@ -26,6 +26,20 @@ jobs:
           node-version: "20"
 
       - name: Verlauf aktualisieren
+        env:
+          # Der Ereignisstrom des Auktionshauses (seit 23.09.2026).
+          #
+          #   beobachten  Der Strom läuft und rechnet, schreibt aber
+          #               nichts. Das Protokoll dieses Schritts sagt am
+          #               Ende, was er archiviert HÄTTE und wie es sich
+          #               zum bisherigen Vergleich verhält.
+          #   an          Der Strom archiviert mit.
+          #   aus         Kein Strom.
+          #
+          # Nach einem Blick in ein Protokoll hier auf `an` stellen.
+          # Worauf dabei zu achten ist, steht in der README unter
+          # „Der Ereignisstrom".
+          STROM: beobachten
         run: |
           node history-updater/update-history.js
           node history-updater/update-shards.js
