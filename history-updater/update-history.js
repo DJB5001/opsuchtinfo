@@ -187,6 +187,14 @@ async function main() {
   const vergleichsIds = new Set();
   const vergleichsPreise = new Map();
 
+  // Was der Strom als Ende OHNE Verkauf gemeldet hat. Der Vergleich
+  // würde genau das als Verkauf archivieren: Eine zurückgezogene
+  // Auktion mit Gebot fällt aus /active heraus und sieht für ihn aus
+  // wie eine verkaufte. Der Preis, den nie jemand bezahlt hat, ginge in
+  // den Schnitt ein.
+  const ohneVerkauf = strom?.ohneVerkauf ?? new Map();
+  let verhindert = 0;
+
   // 4) Verkaufte/beendete Auktionen finden: war vorher da, ist jetzt weg.
   //    Drei Fälle, wenn eine Auktion aus der Liste verschwindet:
   //    a) Endzeit vorbei + Gebote  -> regulär ersteigert
@@ -223,6 +231,14 @@ async function main() {
     }
     // Kein Gebot -> unverkauft/zurückgegeben, nicht archivieren.
     if (!saleType) continue;
+
+    // Der Strom weiß es besser. Beim Beobachten wird nur gezählt: Die
+    // Zahl gehört in den Bericht, damit sichtbar ist, was das Umlegen
+    // des Schalters ausmacht.
+    if (ohneVerkauf.has(key)) {
+      verhindert += 1;
+      if (STROM_MODUS === 'an') continue;
+    }
 
     const { highestBidder, finalPrice } = deriveWinner(prevAuction);
     // Bei Sofortkauf ist der Endpreis der Sofortkaufpreis
@@ -335,7 +351,9 @@ async function main() {
       `${ausStrom ? ` (davon ${ausStrom} aus dem Strom)` : ''}, ` +
       `alte entfernt (>${MAX_AGE_DAYS}d): ${removedOld}.${indexZeile}`
   );
-  console.log(stromBericht(strom, { stromIds, stromPreise, vergleichsIds, vergleichsPreise }));
+  console.log(
+    stromBericht(strom, { stromIds, stromPreise, vergleichsIds, vergleichsPreise, verhindert })
+  );
 }
 
 /**
@@ -355,7 +373,7 @@ async function main() {
  *    was er soll — dann wäre `an` verfrüht. Schlimm ist es nie, denn
  *    der Vergleich läuft in jedem Fall mit.
  */
-function stromBericht(strom, { stromIds, stromPreise, vergleichsIds, vergleichsPreise }) {
+function stromBericht(strom, { stromIds, stromPreise, vergleichsIds, vergleichsPreise, verhindert }) {
   if (!strom) return `Strom: ${STROM_MODUS === 'aus' ? 'abgeschaltet' : 'nicht gelaufen'}.`;
   if (strom.fehler) return `Strom: nicht erreichbar (${strom.fehler}) — der Vergleich hat allein gearbeitet.`;
 
@@ -375,6 +393,15 @@ function stromBericht(strom, { stromIds, stromPreise, vergleichsIds, vergleichsP
   ];
   if (verworfen.length) {
     teile.push(`Verworfen: ${verworfen.map(([g, n]) => `${n}× ${g}`).join(', ')}.`);
+  }
+  if (strom.ohneVerkauf?.size) {
+    teile.push(
+      `${strom.ohneVerkauf.size} endeten ohne Verkauf` +
+        (verhindert
+          ? `, davon ${verhindert}, die der Vergleich sonst als Verkauf archiviert hätte` +
+            `${STROM_MODUS === 'an' ? ' — verhindert' : ''}.`
+          : '.')
+    );
   }
   if (strom.zurueckgesetzt) {
     teile.push('Der Server hat um Neuabgleich gebeten — der Rückstand fehlt, der Vergleich fängt ihn auf.');

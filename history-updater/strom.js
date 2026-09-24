@@ -51,6 +51,24 @@ const VERKAUFSARTEN = {
   'auction.instant_bought': 'instant',
 };
 
+/**
+ * Die Ereignisse, die ein Ende OHNE Verkauf bedeuten.
+ *
+ * Das ist die dritte der drei Ungenauigkeiten des Vergleichs, und die
+ * einzige, die der Strom nicht schon dadurch behebt, dass er einen
+ * Verkauf genauer meldet: Eine zurückgezogene Auktion mit Gebot fällt
+ * aus /active heraus und sieht für den Vergleich aus wie ein Verkauf.
+ * Er archiviert sie als einen — zum Gebotspreis, den nie jemand bezahlt
+ * hat, und der Preis geht in den Schnitt ein.
+ *
+ * Sagt der Strom „zurückgezogen" oder „abgelaufen", weiß der Vergleich
+ * es besser und lässt die Finger davon.
+ */
+const ENDEN_OHNE_VERKAUF = {
+  'auction.cancelled': 'zurückgezogen',
+  'auction.expired': 'abgelaufen',
+};
+
 // ── Der Draht ────────────────────────────────────────────────────────
 
 /**
@@ -270,6 +288,8 @@ async function holeRueckstand({
 } = {}) {
   const bericht = {
     verkaeufe: [],
+    /** Kennungen, die laut Strom geendet haben, ohne verkauft zu werden. */
+    ohneVerkauf: new Map(),
     kennung,
     ereignisse: 0,
     verworfen: {},
@@ -312,11 +332,18 @@ async function holeRueckstand({
         bericht.zurueckgesetzt = true;
         return;
       }
-      if (!VERKAUFSARTEN[ereignis.art]) return;
+      const ohneVerkauf = ENDEN_OHNE_VERKAUF[ereignis.art];
+      if (!VERKAUFSARTEN[ereignis.art] && !ohneVerkauf) return;
 
       const auktion = auktionAus(ereignis.daten);
       if (!auktion) {
         bericht.verworfen.unlesbar = (bericht.verworfen.unlesbar ?? 0) + 1;
+        return;
+      }
+
+      if (ohneVerkauf) {
+        const id = schluesselVon(auktion);
+        if (id) bericht.ohneVerkauf.set(id, ohneVerkauf);
         return;
       }
 
@@ -373,6 +400,7 @@ async function holeRueckstand({
 
 module.exports = {
   holeRueckstand,
+  ENDEN_OHNE_VERKAUF,
   macheZerleger,
   auktionAus,
   zeitpunktAus,

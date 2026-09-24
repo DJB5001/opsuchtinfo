@@ -436,6 +436,51 @@ async function main() {
       /Verworfen:/.test(lauf.ausgabe), lauf.ausgabe.split('\n').at(-2)?.slice(0, 160));
   }
 
+  // Die dritte Ungenauigkeit: Eine zurueckgezogene Auktion mit Gebot
+  // faellt aus /active heraus und sieht fuer den Vergleich aus wie eine
+  // verkaufte. Sagt der Strom "zurueckgezogen", weiss er es besser.
+  {
+    const zurueck = { ...auktion, id: 'zurueck-1', endTime: new Date(Date.now() + 3_600_000).toISOString() };
+    const lauf = laufe({
+      ereignisse: [`id: e7\nevent: auction.cancelled\ndata: ${JSON.stringify(zurueck)}\n\n`],
+      aktiv: [],
+      zustand: { auctions: { 'zurueck-1': zurueck } },
+    });
+    pruefe('Eine zurueckgezogene Auktion wird nicht als Verkauf archiviert',
+      alleVerkaeufe(lauf.verlauf).length === 0, JSON.stringify(Object.keys(lauf.verlauf)));
+    pruefe('Und der Bericht sagt, dass es verhindert wurde',
+      /1, die der Vergleich sonst als Verkauf archiviert hätte — verhindert/.test(lauf.ausgabe),
+      lauf.ausgabe.split('\n').at(-2)?.slice(0, 200));
+  }
+
+  // Gegenprobe, und sie ist der Grund fuer die Zeile darueber: Ohne die
+  // Meldung des Stroms archiviert der Vergleich sie sehr wohl -- zum
+  // Gebotspreis, den nie jemand bezahlt hat.
+  {
+    const zurueck = { ...auktion, id: 'zurueck-2', endTime: new Date(Date.now() + 3_600_000).toISOString() };
+    const lauf = laufe({ ereignisse: [], aktiv: [], zustand: { auctions: { 'zurueck-2': zurueck } }, modus: 'aus' });
+    const verkaeufe = alleVerkaeufe(lauf.verlauf);
+    pruefe('Gegenprobe: Ohne den Strom gilt sie als Verkauf',
+      verkaeufe.length === 1 && verkaeufe[0].finalPrice === 5000,
+      `${verkaeufe.length}x zu ${verkaeufe[0]?.finalPrice}`);
+  }
+
+  // Beim Beobachten wird nur gezaehlt, nicht eingegriffen -- sonst waere
+  // der Modus nicht mehr das, was er verspricht.
+  {
+    const zurueck = { ...auktion, id: 'zurueck-3', endTime: new Date(Date.now() + 3_600_000).toISOString() };
+    const lauf = laufe({
+      ereignisse: [`id: e8\nevent: auction.cancelled\ndata: ${JSON.stringify(zurueck)}\n\n`],
+      aktiv: [],
+      zustand: { auctions: { 'zurueck-3': zurueck } },
+      modus: 'beobachten',
+    });
+    pruefe('Beim Beobachten wird sie weiter archiviert, aber gezaehlt',
+      alleVerkaeufe(lauf.verlauf).length === 1 &&
+        /1, die der Vergleich sonst als Verkauf archiviert hätte\./.test(lauf.ausgabe),
+      lauf.ausgabe.split('\n').at(-2)?.slice(0, 200));
+  }
+
   // Noch laufende Auktionen fasst niemand an.
   {
     const laeuft = { ...auktion, id: 'laeuft-1', endTime: new Date(Date.now() + 3_600_000).toISOString() };

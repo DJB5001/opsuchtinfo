@@ -72,8 +72,8 @@ ohne ihn ginge.
 
 | Wert | Was passiert |
 |---|---|
-| `beobachten` | **Vorgabe.** Der Strom läuft und rechnet, schreibt aber nichts. |
-| `an` | Der Strom archiviert mit. |
+| `an` | **Eingestellt.** Der Strom archiviert mit. |
+| `beobachten` | Vorgabe im Code: Der Strom läuft und rechnet, schreibt aber nichts. |
 | `aus` | Kein Strom. |
 
 Die Vorgabe ist Absicht. Dieser Code ist gegen eine Ankündigung
@@ -104,6 +104,40 @@ Worauf dabei zu achten ist:
   gehört angepasst, bevor der Schalter umgelegt wird.
 
 Ist die Zeile plausibel, `STROM: an` im Workflow setzen.
+
+#### Was der erste Beobachten-Lauf gezeigt hat
+
+Zwei Läufe, fünf Minuten auseinander:
+
+```
+#22144  1 Ereignisse in 13 s, 0 Verkäufe erkannt … 10 nur im Vergleich.
+        Der Server hat um Neuabgleich gebeten — der Rückstand fehlt.
+#22145  23 Ereignisse in 16 s, 2 Verkäufe erkannt … 2 nur im Strom, 1 nur im Vergleich.
+```
+
+Der zweite ist der aussagekräftige. Die Ereigniskennungen liefen von
+`…-2612` auf `…-2635` — **genau 23**, also hat der Server auf
+`Last-Event-ID` hin die volle Lücke der letzten fünf Minuten
+nachgeliefert. Der Wiederanschluss funktioniert; das `stream.reset` im
+Lauf davor war der erste Verbindungsaufbau.
+
+Die zwei Verkäufe „nur im Strom" sind genau der Gewinn: Auktionen, die
+zwischen zwei Läufen eingestellt *und* gekauft wurden. „Verworfen"
+stand nicht da — die Ereignisse haben also die Form, gegen die dieser
+Code geschrieben ist. Danach wurde auf `an` gestellt.
+
+#### Der Vergleich glaubt dem Strom auch, wenn NICHT verkauft wurde
+
+Die dritte Ungenauigkeit des Vergleichs behebt sich nicht von selbst
+dadurch, dass der Strom einen Verkauf genauer meldet: Eine
+**zurückgezogene** Auktion mit Gebot fällt aus `/active` heraus und
+sieht für den Vergleich aus wie eine verkaufte. Er archiviert sie als
+Verkauf — zum Gebotspreis, den nie jemand bezahlt hat, und der geht in
+den Schnitt ein.
+
+Meldet der Strom `auction.cancelled` oder `auction.expired`, lässt der
+Vergleich die Finger davon. Beim Beobachten wird nur gezählt, damit im
+Bericht steht, was das Umlegen des Schalters ausmacht.
 
 ## Der Wert-Index
 
