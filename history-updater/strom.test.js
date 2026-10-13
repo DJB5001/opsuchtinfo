@@ -285,6 +285,9 @@ async function main() {
 
   const HIER = __dirname;
 
+  // Ohne Schlüssel läuft der Updater nicht (anonym.js).
+  const LAUF_SCHLUESSEL = 'strom-test-schluessel-0123456789';
+
   /**
    * Einen Lauf in einem eigenen Verzeichnis durchführen.
    *
@@ -297,11 +300,10 @@ async function main() {
     const kiste = fs.mkdtempSync(path.join(os.tmpdir(), 'strom-lauf-'));
     const unter = path.join(kiste, 'history-updater');
     fs.mkdirSync(unter);
-    for (const datei of ['update-history.js', 'strom.js', 'wert-index.js', 'namen.js']) {
+    for (const datei of ['update-history.js', 'strom.js', 'wert-index.js', 'anonym.js']) {
       fs.copyFileSync(path.join(HIER, datei), path.join(unter, datei));
     }
     fs.writeFileSync(path.join(kiste, 'auction-history.json'), JSON.stringify(verlauf));
-    fs.writeFileSync(path.join(unter, 'namen.json'), '{}');
     if (zustand) fs.writeFileSync(path.join(unter, 'state.json'), JSON.stringify(zustand));
 
     const netz = `
@@ -332,7 +334,7 @@ async function main() {
     const ausgabe = execFileSync(
       process.execPath,
       ['--require', netzDatei, path.join(unter, 'update-history.js')],
-      { encoding: 'utf8', env: { ...process.env, STROM: modus }, timeout: 60_000 }
+      { encoding: 'utf8', env: { ...process.env, STROM: modus, ANONYM_SCHLUESSEL: LAUF_SCHLUESSEL }, timeout: 60_000 }
     );
 
     return {

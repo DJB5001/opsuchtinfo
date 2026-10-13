@@ -46,6 +46,13 @@ jobs:
           # anders verhält als gedacht — der Vergleich läuft in jedem
           # Fall mit, die Zahlen wären dann nur wieder die alten.
           STROM: an
+          # Keine Spielerdaten im Repo (history-updater/anonym.js).
+          # Ohne ANONYM_SCHLUESSEL bricht der Lauf ab, statt UUIDs zu
+          # schreiben. GESPERRT: Spieler, die nicht erfasst werden
+          # wollen, als "Name:UUID,Name,…". Beide stehen nur als Secret,
+          # nie in einer Datei.
+          ANONYM_SCHLUESSEL: ${{ secrets.ANONYM_SCHLUESSEL }}
+          GESPERRT: ${{ secrets.GESPERRT }}
         run: |
           node history-updater/update-history.js
           node history-updater/update-shards.js
@@ -60,7 +67,7 @@ jobs:
           # Jede Datei, die ein Lauf schreibt, muss hier stehen — was fehlt,
           # baut der Lauf umsonst und der nächste Checkout wirft es weg.
           git add auction-history.json shard-history.json wert-index.json \
-                  history-updater/state.json history-updater/namen.json \
+                  history-updater/state.json \
                   history-updater/last-run.txt
           if git diff --staged --quiet; then
             echo "Keine Änderungen."

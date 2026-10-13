@@ -28,8 +28,9 @@ const STATE_FILE = path.join(__dirname, 'state.json');
 // Die kleine Zusammenfassung für den Discord-Bot. Warum es sie gibt und
 // was drinsteht, erklärt wert-index.js.
 const { baueIndex } = require('./wert-index.js');
-const { ergaenzeNamen } = require('./namen.js');
 const { holeRueckstand } = require('./strom.js');
+// Keine Spielerdaten im Repo — warum und wie, steht in anonym.js.
+const anonymisierung = require('./anonym.js');
 const INDEX_FILE = path.join(__dirname, '..', 'wert-index.json');
 
 // =====================================================================
@@ -83,8 +84,20 @@ function readJson(file, fallback) {
   }
 }
 
+/**
+ * Schreibt eine Datei — aber nie eine mit einer Spieler-UUID darin.
+ *
+ * Das ist die letzte Sicherung hinter anonym.js. Rutscht doch etwas
+ * durch, bricht der Lauf hier ab, statt es in ein öffentliches Repo zu
+ * committen. Die Fundstelle wird bewusst nicht ausgegeben: Das Protokoll
+ * der Action kann jeder lesen.
+ */
 function writeJson(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 0));
+  const text = JSON.stringify(data, null, 0);
+  if (anonymisierung.enthaeltUuid(text)) {
+    throw new Error(`${path.basename(file)} enthielte eine Spieler-UUID — nichts geschrieben.`);
+  }
+  fs.writeFileSync(file, text);
 }
 
 // Eindeutige ID einer Auktion (gleich wie im Frontend aufgebaut)
@@ -133,6 +146,25 @@ function archiviere(history, name, sale) {
 }
 
 async function main() {
+  // 0) Ohne Schlüssel kein Lauf. Lieber gar nichts schreiben als
+  //    Spieler-UUIDs im Klartext (anonym.js).
+  let anonym;
+  try {
+    anonym = anonymisierung.erstelle({
+      schluessel: process.env.ANONYM_SCHLUESSEL,
+      gesperrt: process.env.GESPERRT,
+    });
+  } catch (e) {
+    console.error(e.message);
+    process.exitCode = 1;
+    return;
+  }
+  // Nur Zahlen ins Protokoll, nie Namen: Es ist öffentlich.
+  const { offen } = await anonym.loeseAuf();
+  if (offen) {
+    console.warn(`${offen} gesperrte(r) Spieler ohne UUID — bis dahin wird nur der Name geschwärzt.`);
+  }
+
   // 1) Vorherigen Zustand laden — vor allem anderen, weil im Zustand
   //    steht, wo der Strom beim letzten Mal aufgehört hat.
   const prevState = readJson(STATE_FILE, { auctions: {} });
@@ -147,6 +179,7 @@ async function main() {
     strom = await holeRueckstand({
       kennung: prevState.stromKennung,
       schluesselVon: auctionKey,
+      aufbereiten: anonym.auktion,
     });
   }
 
@@ -177,6 +210,10 @@ async function main() {
     console.error('Unerwartetes API-Format, breche ab.');
     return beendeOhneVergleich(history, prevState, strom, ausStrom);
   }
+
+  // Ab hier gibt es nur noch Kürzel statt UUIDs, und die Auktionen
+  // gesperrter Spieler gibt es gar nicht mehr.
+  active = active.map(anonym.auktion).filter(Boolean);
 
   // Map: key -> Auktion (aktueller Zustand)
   const activeMap = {};
@@ -318,30 +355,11 @@ async function main() {
   try {
     const { index, entdoppelt } = baueIndex(history);
 
-    // Namen dazu, soweit sie bekannt sind. Aufgelöst wird nur ein
-    // Häppchen pro Lauf — warum, steht in namen.js. Auch hier gilt: Ein
-    // Aussetzer bei einem fremden Dienst darf den Index nicht kosten.
-    let namenZeile = '';
-    try {
-      const { namen, bericht } = await ergaenzeNamen(index.spieler);
-      // Fünfte Stelle der Spielerzeile, siehe wert-index.js.
-      for (const [uuid, name] of Object.entries(namen)) {
-        if (index.spieler[uuid]) index.spieler[uuid][4] = name;
-      }
-      namenZeile =
-        ` Namen: ${bericht.bekannt}/${bericht.gesamt} bekannt ` +
-        `(${bericht.neu} neu, ${bericht.leer} ohne Treffer` +
-        `${bericht.abgebrochen ? `, ${bericht.offen} vertagt — Zeitbudget` : ''}).`;
-    } catch (e) {
-      namenZeile = ` Namen nicht ergänzt: ${e.message}`;
-    }
-
     writeJson(INDEX_FILE, index);
     const groesse = Math.round(fs.statSync(INDEX_FILE).size / 1024);
     indexZeile =
-      ` Index: ${Object.keys(index.items).length} Items, ` +
-      `${Object.keys(index.spieler).length} Spieler, ${groesse} KB ` +
-      `(${entdoppelt} Zwischenstände zusammengefasst).${namenZeile}`;
+      ` Index: ${Object.keys(index.items).length} Items, ${groesse} KB ` +
+      `(${entdoppelt} Zwischenstände zusammengefasst).`;
   } catch (e) {
     indexZeile = ` Index NICHT geschrieben: ${e.message}`;
   }

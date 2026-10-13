@@ -276,6 +276,12 @@ function verkaufAus(auktion, art, zeitpunkt, schluesselVon) {
  * Wirft nie. Ein Strom, der nicht geht, ist kein Grund, den Lauf
  * scheitern zu lassen — der Vergleich macht dann die Arbeit allein, so
  * wie er es seit Monaten tut.
+ *
+ * `aufbereiten` läuft über jede Auktion aus einem Ereignis, bevor
+ * irgendetwas damit geschieht — auch bevor die Kennung entsteht. Der
+ * Updater macht dort aus UUIDs Kürzel (anonym.js), damit Strom und
+ * Vergleich dieselben Kennungen bilden. Gibt es null zurück, wird das
+ * Ereignis übergangen.
  */
 async function holeRueckstand({
   kennung = null,
@@ -284,6 +290,7 @@ async function holeRueckstand({
   adresse = STROM_URL,
   holen = fetch,
   schluesselVon,
+  aufbereiten = (auktion) => auktion,
   log = console,
 } = {}) {
   const bericht = {
@@ -335,9 +342,14 @@ async function holeRueckstand({
       const ohneVerkauf = ENDEN_OHNE_VERKAUF[ereignis.art];
       if (!VERKAUFSARTEN[ereignis.art] && !ohneVerkauf) return;
 
-      const auktion = auktionAus(ereignis.daten);
-      if (!auktion) {
+      const roh = auktionAus(ereignis.daten);
+      if (!roh) {
         bericht.verworfen.unlesbar = (bericht.verworfen.unlesbar ?? 0) + 1;
+        return;
+      }
+      const auktion = aufbereiten(roh);
+      if (!auktion) {
+        bericht.verworfen.ausgeschlossen = (bericht.verworfen.ausgeschlossen ?? 0) + 1;
         return;
       }
 

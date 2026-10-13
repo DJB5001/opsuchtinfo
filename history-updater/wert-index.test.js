@@ -688,19 +688,33 @@ pruefe('Die Reihenfolge der Verzauberungen ist egal',
     enchantments: { 'minecraft:sharpness': 5, 'minecraft:mending': 1 },
   })));
 
-// ── 2. Spielerbilanz ────────────────────────────────────────────────
-console.log('\n— Spielerbilanz —');
+// ── 2. Keine Spielerdaten ───────────────────────────────────────────
+console.log('\n— Keine Spielerdaten —');
 
-const verk = index.spieler['verk-1'];
-pruefe('Verkäufer ist verzeichnet', Array.isArray(verk), JSON.stringify(verk));
-pruefe('Alle sechs Verkäufe zählen, auch die alten', verk[2] === 6, `${verk[2]}`);
-pruefe('Einnahmen über den ganzen Verlauf', verk[0] === 800 + 900 + 1000 + 4 + 5000 + 640,
-  `${verk[0]}`);
-pruefe('Der Käufer steht auf der anderen Seite', index.spieler['kauf-1'][3] === 6,
-  `${index.spieler['kauf-1'][3]}`);
+// Bis zum 13.10.2026 stand hier eine Bilanz je Spieler, samt Namen.
+// Das Repo ist öffentlich und speichert keine Spielerdaten mehr
+// (anonym.js) — auch nicht in der Zusammenfassung.
+pruefe('Keine Spielerbilanz im Index', !('spieler' in index), Object.keys(index).join(','));
+pruefe('Weder Verkäufer noch Käufer stehen in der Datei',
+  !JSON.stringify(index).includes('verk-1') && !JSON.stringify(index).includes('kauf-1'));
 
-const ohneUmsatz = Object.values(index.spieler).filter((k) => k[2] === 0 && k[3] === 0);
-pruefe('Keine leeren Konten in der Datei', ohneUmsatz.length === 0, `${ohneUmsatz.length}`);
+// Ein gespeichertes k gilt, auch wenn die Lore danach geschwärzt wurde:
+// Die Mod rechnet k aus dem echten Gegenstand und muss die Zeile finden.
+const echteLore = ['Ein Schwert', 'Signiert von Jemand am 01.10.2026'];
+const kEcht = eigen.variantenSchluessel(eigen.itemVariante({ material: 'NETHERITE_SWORD', lore: echteLore }));
+const geschwaerzt = {
+  Traumschwert: [
+    { ...verkauf({ preis: 100, zeit: vorTagen(1) }), item: { material: 'NETHERITE_SWORD', amount: 1,
+      lore: ['Ein Schwert', 'Signiert von *** am 01.10.2026'], k: kEcht } },
+    { ...verkauf({ preis: 300, zeit: vorTagen(2) }), item: { material: 'NETHERITE_SWORD', amount: 1,
+      lore: ['Ein Schwert', 'Signiert von *** am 02.10.2026'], k: 'anderesk0001' } },
+  ],
+};
+const ausGeschwaerzt = eigen.baueIndex(geschwaerzt, JETZT).index.items.Traumschwert ?? [];
+pruefe('Das gespeicherte k steht im Index', ausGeschwaerzt.some((e) => e.k === kEcht),
+  ausGeschwaerzt.map((e) => e.k).join(','));
+pruefe('Zwei Signierende bleiben zwei Zeilen, obwohl beide geschwärzt sind',
+  ausGeschwaerzt.length === 2, `${ausGeschwaerzt.length}`);
 
 // ── 3. Verlängerte Auktionen ────────────────────────────────────────
 console.log('\n— Verlängerungen —');
@@ -722,8 +736,6 @@ pruefe('Zwei Zwischenstände erkannt', gekettet.entdoppelt === 2, `${gekettet.en
 pruefe('Nur ein Verkauf bleibt', gekettet.index.items['Bohrer V3'][0].n === 1);
 pruefe('Und zwar der letzte Preis', gekettet.index.items['Bohrer V3'][0].d === 900,
   `${gekettet.index.items['Bohrer V3'][0].d}`);
-pruefe('Die Bilanz zählt ihn auch nur einmal', gekettet.index.spieler['verk-1'][2] === 1,
-  `${gekettet.index.spieler['verk-1'][2]}`);
 
 // ── 4. Abgleich mit der Website ─────────────────────────────────────
 console.log('\n— Abgleich mit der Website —');

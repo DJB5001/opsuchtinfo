@@ -13,12 +13,45 @@ sie laufen, und danach ist die Information weg.
 | `shard-history.json` | Verlauf der Shard-Preise |
 | `wert-index.json` | Zusammenfassung für den Discord-Bot. ~1 MB |
 | `history-updater/state.json` | Die zuletzt gesehenen aktiven Auktionen — daraus ergibt sich, was verkauft wurde |
-| `history-updater/namen.json` | UUID → Spielername, mit Zeitpunkt des letzten Versuchs |
 | `history-updater/last-run.txt` | Zeitstempel, damit jeder Lauf einen Commit ergibt |
 
 **Jede Datei, die ein Lauf schreibt, muss in der `git add`-Zeile der
 Action stehen.** Was dort fehlt, wird gebaut und beim nächsten Checkout
 weggeworfen — ohne Fehlermeldung, ohne Spur.
+
+## Keine Spielerdaten
+
+Dieses Repo ist öffentlich, und alles, was hier landet, bleibt in der
+Historie. Bis zum 13.10.2026 stand in jedem Verkauf die UUID von
+Verkäufer und Bietern, dazu eine Liste UUID → Name. Für die Itemwerte
+braucht es das nicht. Seitdem läuft jede Auktion durch
+`history-updater/anonym.js`, bevor sie gespeichert wird:
+
+- **Verkäufer und Bieter werden zu Kürzeln**, einem HMAC über die UUID.
+  Der Schlüssel dafür steht nur als Secret `ANONYM_SCHLUESSEL`; ohne ihn
+  lässt sich aus einem Kürzel nicht auf den Spieler schließen. Ganz
+  weglassen geht nicht, weil die Entdopplung verlängerter Auktionen
+  dieselbe Auktion an Verkäufer und Bieterschaft erkennt.
+- **Zuschreibungen in der Lore werden geschwärzt:** „Signiert von …",
+  „Inhaber: …", „Bestimmt für …". Die Signatur des Servers
+  („Signiert von OPSUCHT") bleibt. Item-Namen bleiben ebenfalls, denn das
+  sind Produktnamen, und über sie findet die Mod den Gegenstand.
+- **Der Variantenschlüssel `k` wird vorher aus der echten Lore
+  berechnet** und am Item gespeichert. Die Mod rechnet ihn aus dem
+  Gegenstand im Inventar, mit dem echten Namen in der Signatur.
+- **Gesperrte Spieler** (Secret `GESPERRT`, als `Name:UUID,Name,…`)
+  fallen ganz heraus. Ihre Auktionen werden nicht gespeichert, ihre Gebote
+  stehen als `ausgeblendet`, ihr Name verschwindet aus allen Texten.
+  Fehlende UUIDs schlägt der Lauf selbst nach. In eine Datei im Repo
+  gehören sie nie, das Protokoll nennt nur Zahlen.
+
+Zwei Sicherungen, falls etwas schiefgeht: **Ohne Schlüssel läuft der
+Updater gar nicht.** Und **jede Datei wird vor dem Schreiben nach einer
+UUID durchsucht.** Findet sich eine, bricht der Lauf ab, statt sie zu
+committen.
+
+Eine Spielerbilanz (`spieler` im Index, `/spieler` im Bot) gibt es
+deshalb nicht mehr.
 
 ## Wie ein Verkauf erkannt wird
 
@@ -143,8 +176,7 @@ Bericht steht, was das Umlegen des Schalters ausmacht.
 
 `wert-index.json` entsteht bei jedem Lauf mit (`history-updater/wert-index.js`).
 Der Bot soll auf `/wert` in Sekunden antworten; 60 MB je Befehl zu laden
-geht nicht. Also je Item und Variante die Zahlen der letzten 90 Tage,
-dazu die Bilanz jedes Spielers.
+geht nicht. Also je Item und Variante die Zahlen der letzten 90 Tage.
 
 Je Variante steht eine **Tagesreihe** darin: `{ "2026-08-15": [anzahl,
 schnitt, min, max] }`. Sie trägt die Zählungen und den Trend. Die beiden
@@ -365,37 +397,11 @@ Namen ununterscheidbar bleiben, von **968 über 403 auf 269**. Null wird
 es nie: Manche Ausführungen trennt nur ein doppelt geliefertes
 Textstück.
 
-## Die Händlernamen
-
-Der Index kennt knapp siebentausend Händler, aber nur ihre UUIDs. Für die
-Vorschläge bei `/spieler` im Discord müssen daraus Namen werden, und die
-gibt es nur einzeln abzufragen.
-
-`history-updater/namen.js` löst deshalb **je Lauf höchstens fünfzig** auf,
-die umsatzstärksten zuerst. Nach gut einem Tag ist der ganze Bestand
-beisammen, die wichtigsten schon nach einer Stunde. Aufgelöste Namen
-bleiben stehen und werden erst nach 30 Tagen erneut geprüft.
-
-Drei Vorkehrungen, damit die Zugabe nie die Hauptsache gefährdet:
-
-- **Ein Zeitbudget von 90 Sekunden.** Fällt ein Dienst aus, läuft jede
-  Anfrage in ihr Zeitlimit; fünfzig davon wären mehr als der Abstand zum
-  nächsten Lauf, und die Läufe würden sich stauen.
-- **Fehler brechen nichts ab.** Wer nicht auflösbar ist, bekommt einen
-  Vermerk und ist in ein paar Tagen wieder dran.
-- **Ein Ausfall kostet keinen bekannten Namen.** Scheitert die
-  Auffrischung, bleibt der alte stehen und wird nur früher erneut geprüft.
-
-Im Index hängt der Name an fünfter Stelle der Spielerzeile
-(`[ein, aus, verkauft, gewonnen, name]`) und nicht in einer eigenen
-Liste: Sonst stünde jede UUID ein zweites Mal in der Datei, 350 KB nur
-für Schlüssel, die schon da sind.
-
 ## Tests
 
 ```bash
 node history-updater/wert-index.test.js   # Index, und Abgleich mit der Website
-node history-updater/namen.test.js        # Namensauflösung, ohne Netz
+node history-updater/anonym.test.js       # Keine Spielerdaten, mit einem ganzen Lauf
 node history-updater/strom.test.js        # Ereignisstrom, ohne Netz (~40 s)
 ```
 

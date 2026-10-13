@@ -7,9 +7,12 @@
 // kann das nicht.
 //
 // Deshalb entsteht bei jedem Lauf zusätzlich diese Zusammenfassung:
-// je Item und Variante die Zahlen der letzten 90 Tage, dazu die Bilanz
-// jedes Spielers. Rund 2 MB statt 34 MB, über die Leitung gezippt ein
-// Bruchteil davon.
+// je Item und Variante die Zahlen der letzten 90 Tage. Rund 2 MB statt
+// 34 MB, über die Leitung gezippt ein Bruchteil davon.
+//
+// Eine Bilanz je Spieler stand hier bis zum 13.10.2026 mit drin, samt
+// Namen. Sie ist weg, und mit ihr namen.js: Dieses Repo speichert keine
+// Spielerdaten mehr (anonym.js).
 //
 // Warum 90 und nicht mehr: Weiter zurück gibt es nichts. Der Verlauf
 // daneben räumt selbst auf (MAX_AGE_DAYS in update-history.js) und wirft
@@ -161,6 +164,24 @@ function verzauberungsStempel(item) {
  */
 function itemVariante(item) {
   return `${item?.material ?? ''}\u0000${loreSchluessel(item)}\u0000${verzauberungsStempel(item)}`;
+}
+
+/**
+ * Der Schlüssel, unter dem ein Verkauf gruppiert wird.
+ *
+ * Hat das Item ein gespeichertes k, gilt das: anonym.js rechnet es aus
+ * der echten Lore, bevor es Signaturen schwärzt. Aus der geschwärzten
+ * Lore gerechnet, fielen "Signiert von A" und "Signiert von B" zusammen,
+ * und die Mod fände ihre Zeile nicht mehr. Ältere Einträge ohne k
+ * rechnen wie bisher.
+ */
+function gruppenSchluessel(item) {
+  return item?.k ? `k\u0000${item.k}` : itemVariante(item);
+}
+
+/** Das k einer Gruppe — gespeichert oder aus der Variante gerechnet. */
+function kVon(item, schluessel) {
+  return item?.k || variantenSchluessel(schluessel);
 }
 
 /**
@@ -361,7 +382,7 @@ function verlaufEntdoppeln(verlauf) {
 
     const gruppen = new Map();
     for (const verkauf of liste) {
-      const schluessel = `${verkauf?.seller ?? ''}\u0000${itemVariante(verkauf?.item)}`;
+      const schluessel = `${verkauf?.seller ?? ''}\u0000${gruppenSchluessel(verkauf?.item)}`;
       if (!gruppen.has(schluessel)) gruppen.set(schluessel, []);
       gruppen.get(schluessel).push(verkauf);
     }
@@ -532,16 +553,6 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
   const grenze = jetzt - TAGE * 24 * 60 * 60 * 1000;
 
   const items = {};
-  const spieler = {};
-
-  // ein, aus, verkauft, gewonnen — und an fünfter Stelle der Spielername,
-  // sobald namen.js ihn aufgelöst hat. Der hängt hier und nicht in einer
-  // eigenen Liste, weil die UUID sonst ein zweites Mal in der Datei
-  // stünde: 350 KB nur für Schlüssel, die schon da sind.
-  const konto = (uuid) => {
-    if (!spieler[uuid]) spieler[uuid] = [0, 0, 0, 0];
-    return spieler[uuid];
-  };
 
   for (const name in verlauf) {
     const liste = verlauf[name];
@@ -556,26 +567,13 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
       const zeit = verkaufsZeit(verkauf);
       const preis = Math.round(salePricePerUnit(verkauf));
 
-      // Die Spielerbilanz zählt den ganzen Verlauf, nicht nur das Fenster:
-      // Sie beantwortet "wie viel hat jemand insgesamt umgesetzt".
-      if (verkauf.seller) {
-        const k = konto(verkauf.seller);
-        k[0] += verkauf.finalPrice ?? verkauf.currentBid ?? 0;
-        k[2] += 1;
-      }
-      if (verkauf.highestBidder) {
-        const k = konto(verkauf.highestBidder);
-        k[1] += verkauf.finalPrice ?? verkauf.currentBid ?? 0;
-        k[3] += 1;
-      }
-
       if (zeit < grenze) continue;
 
-      const schluessel = itemVariante(verkauf.item);
+      const schluessel = gruppenSchluessel(verkauf.item);
       if (!nachVariante.has(schluessel)) {
         nachVariante.set(schluessel, {
-          // Der Variantenschlüssel selbst, für die Zeile k weiter unten.
-          schluessel,
+          // Für die Zeile k weiter unten, siehe kVon().
+          k: kVon(verkauf.item, schluessel),
           m: verkauf.item?.material ?? '',
           v: variantenLabel(verkauf.item),
           // Der Verzauberungsstempel wandert mit in die Datei. Nur damit
@@ -657,7 +655,7 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
         // Damit die Mod im Spiel dieselbe Zeile findet, siehe
         // variantenSchluessel(). Steht vor den Zahlen, weil es zum
         // Erkennen gehört und nicht zum Auswerten.
-        k: variantenSchluessel(e.schluessel),
+        k: e.k,
         // Die Anzahl zählt weiter jeden Verkauf. Winsorisieren wirft
         // nichts weg, es begrenzt nur, wie weit ein einzelner Preis
         // den Schnitt ziehen darf — n und die Spanne bleiben deshalb
@@ -685,22 +683,11 @@ function baueIndex(rohVerlauf, jetzt = Date.now()) {
     if (eintraege.length) items[name] = eintraege;
   }
 
-  // Konten ohne Umsatz tragen nichts bei und würden die Datei nur füllen.
-  for (const uuid of Object.keys(spieler)) {
-    const k = spieler[uuid];
-    if (k[2] === 0 && k[3] === 0) delete spieler[uuid];
-    else {
-      k[0] = Math.round(k[0]);
-      k[1] = Math.round(k[1]);
-    }
-  }
-
   return {
     index: {
       erstellt: new Date(jetzt).toISOString(),
       tage: TAGE,
       items,
-      spieler,
     },
     entdoppelt: entfernt,
   };
